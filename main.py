@@ -1,18 +1,20 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher.filters.state import State, StatesGroup
-from aiogram.types import ParseMode, InputFile
-from aiogram.utils import executor
+import os
+from typing import Optional
 
-from config import BOT_TOKEN, WELCOME_TEXT, EMOJI, LOCATIONS_TEXT, DELIVERY_TEXT
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.filters import CommandStart, Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import Message, CallbackQuery, InputFile
+from aiogram.enums import ParseMode
+
+from config import BOT_TOKEN, WELCOME_TEXT, EMOJI
 from keyboards import (
-    get_main_menu, get_back_menu, get_body_care_menu, 
-    get_hair_type_menu, get_problems_inline_keyboard,
-    get_yes_no_menu, get_volume_menu, get_hair_color_menu,
-    get_final_menu
+    get_main_menu, get_body_care_menu, get_hair_type_menu,
+    get_problems_inline_keyboard, get_yes_no_menu,
+    get_volume_menu, get_hair_color_menu, get_final_menu
 )
 from database import storage
 from recommendations import (
@@ -26,89 +28,91 @@ from recommendations import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Инициализация бота
+# Инициализация
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
-dp = Dispatcher(bot, storage=MemoryStorage())
+dp = Dispatcher(storage=MemoryStorage())
+router = Router()
+dp.include_router(router)
 
-# Состояния
-class Form(StatesGroup):
-    main = State()
-    body = State()
-    hair = State()
-    hair_type = State()
-    problems = State()
-    scalp = State()
-    volume = State()
-    color = State()
-    result = State()
-
-# ========== РЕКОМЕНДАЦИИ (обновленные) ==========
-
-BODY_RECOMMENDATIONS = {
-    "Общий уход и увлажнение": BODY_CARE_RECOMMENDATIONS["general"],
-    "Сухая кожа": BODY_CARE_RECOMMENDATIONS["dry"],
-    "Чувствительная кожа": BODY_CARE_RECOMMENDATIONS["sensitive"],
-    "Борьба с целлюлитом": BODY_CARE_RECOMMENDATIONS["cellulite"]
-}
+# Состояния (упрощенные)
+class UserState:
+    MAIN = "main"
+    BODY = "body"
+    HAIR_TYPE = "hair_type"
+    PROBLEMS = "problems"
+    SCALP = "scalp"
+    VOLUME = "volume"
+    COLOR = "color"
+    RESULT = "result"
 
 # ========== ОСНОВНЫЕ КОМАНДЫ ==========
 
-@dp.message_handler(commands=['start', 'restart'], state='*')
-async def cmd_start(message: types.Message, state: FSMContext):
+@router.message(CommandStart())
+async def cmd_start(message: Message, state: FSMContext):
     """Обработчик старта"""
-    await state.finish()
+    await state.clear()
     storage.delete(message.from_user.id)
-
+    
     await message.answer(WELCOME_TEXT, reply_markup=get_main_menu())
-    await Form.main.set()
+    await state.set_state(UserState.MAIN)
 
-@dp.message_handler(text="🔄 Начать заново", state='*')
-async def cmd_restart(message: types.Message, state: FSMContext):
-    """Обработчик перезапуска"""
+@router.message(Command("restart"))
+async def cmd_restart(message: Message, state: FSMContext):
+    """Перезапуск"""
     await cmd_start(message, state)
 
-@dp.message_handler(text="◀️ Назад", state='*')
-async def cmd_back(message: types.Message, state: FSMContext):
-    """Обработчик кнопки Назад"""
+@router.message(F.text == "◀️ Назад")
+async def cmd_back(message: Message, state: FSMContext):
+    """Назад"""
     current_state = await state.get_state()
-
-    if current_state == Form.body.state:
+    
+    if current_state == UserState.BODY:
         await message.answer("Главное меню:", reply_markup=get_main_menu())
-        await Form.main.set()
-    elif current_state in [Form.hair_type.state, Form.problems.state, Form.scalp.state, Form.volume.state, Form.color.state]:
+        await state.set_state(UserState.MAIN)
+    elif current_state in [UserState.HAIR_TYPE, UserState.PROBLEMS, UserState.SCALP, 
+                          UserState.VOLUME, UserState.COLOR, UserState.RESULT]:
         await message.answer("Главное меню:", reply_markup=get_main_menu())
-        await Form.main.set()
+        await state.set_state(UserState.MAIN)
     else:
         await cmd_start(message, state)
 
 # ========== ГЛАВНОЕ МЕНЮ ==========
 
-@dp.message_handler(text="🧴 Уход за телом", state=Form.main)
-async def body_care_handler(message: types.Message):
+@router.message(F.text == "🧴 Уход за телом", UserState.MAIN)
+async def body_care_handler(message: Message, state: FSMContext):
     """Выбран уход за телом"""
     await message.answer("Выберите задачу для кожи тела:", reply_markup=get_body_care_menu())
-    await Form.body.set()
+    await state.set_state(UserState.BODY)
 
-@dp.message_handler(text="💇‍♀️ Уход за волосами", state=Form.main)
-async def hair_care_handler(message: types.Message):
+@router.message(F.text == "💇‍♀️ Уход за волосами", UserState.MAIN)
+async def hair_care_handler(message: Message, state: FSMContext):
     """Выбран уход за волосами"""
     await message.answer("Ваши волосы окрашены?", reply_markup=get_hair_type_menu())
-    await Form.hair_type.set()
+    await state.set_state(UserState.HAIR_TYPE)
 
-# ========== УХОД ЗА ТЕЛОМ (с изображениями) ==========
+# ========== УХОД ЗА ТЕЛОМ ==========
 
-@dp.message_handler(state=Form.body)
-async def body_type_handler(message: types.Message, state: FSMContext):
+@router.message(UserState.BODY)
+async def body_type_handler(message: Message, state: FSMContext):
     """Обработка выбора типа кожи тела"""
     text = message.text
-
-    if text not in BODY_RECOMMENDATIONS:
+    
+    # Определяем тип
+    body_type_map = {
+        "Общий уход и увлажнение": "general",
+        "Сухая кожа": "dry",
+        "Чувствительная кожа": "sensitive",
+        "Борьба с целлюлитом": "cellulite"
+    }
+    
+    if text not in body_type_map:
         await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_body_care_menu())
         return
-
-    recommendation = BODY_RECOMMENDATIONS[text]
     
-    # Формируем ответ с изображением
+    key = body_type_map[text]
+    recommendation = BODY_CARE_RECOMMENDATIONS[key]
+    
+    # Формируем ответ
     products_text = "\n".join(recommendation["products"])
     
     response = f"""
@@ -123,7 +127,7 @@ async def body_type_handler(message: types.Message, state: FSMContext):
 🔄 *Для нового подбора нажмите «Начать заново»*
     """
     
-    # Отправляем изображение с подписью
+    # Пытаемся отправить с фото
     try:
         await message.answer_photo(
             photo=recommendation["image"],
@@ -131,19 +135,18 @@ async def body_type_handler(message: types.Message, state: FSMContext):
             reply_markup=get_final_menu()
         )
     except Exception as e:
-        # Если не удалось отправить фото, отправляем текст
         logger.error(f"Ошибка отправки фото: {e}")
         await message.answer(response, reply_markup=get_final_menu())
     
-    await Form.result.set()
+    await state.set_state(UserState.RESULT)
 
-# ========== УХОД ЗА ВОЛОСАМИ (с изображениями) ==========
+# ========== УХОД ЗА ВОЛОСАМИ ==========
 
-@dp.message_handler(state=Form.hair_type)
-async def hair_type_handler(message: types.Message, state: FSMContext):
+@router.message(UserState.HAIR_TYPE)
+async def hair_type_handler(message: Message, state: FSMContext):
     """Обработка выбора типа волос"""
     text = message.text
-
+    
     if "блондинка" in text.lower():
         hair_type = "blonde"
     elif "окрашенные" in text.lower():
@@ -153,73 +156,71 @@ async def hair_type_handler(message: types.Message, state: FSMContext):
     else:
         await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_hair_type_menu())
         return
-
+    
     storage.save(message.from_user.id, "hair_type", hair_type)
     
     # Просим выбрать проблемы
-    await message.answer("🔧 Выберите проблемы волос (можно несколько):", reply_markup=get_back_menu())
+    await message.answer("🔧 Выберите проблемы волос (можно несколько):")
     await message.answer("Нажмите на проблему для выбора:", reply_markup=get_problems_inline_keyboard())
-    await Form.problems.set()
+    await state.set_state(UserState.PROBLEMS)
 
-@dp.callback_query_handler(lambda c: c.data.startswith('prob_'), state=Form.problems)
-async def process_problem_callback(callback_query: types.CallbackQuery, state: FSMContext):
+@router.callback_query(F.data.startswith("prob_"), UserState.PROBLEMS)
+async def process_problem_callback(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора проблемы"""
-    problem_id = callback_query.data.replace('prob_', '')
-    user_id = callback_query.from_user.id
-
+    problem_id = callback.data.replace("prob_", "")
+    user_id = callback.from_user.id
+    
     current_problems = storage.get(user_id, "problems") or []
-
-    if problem_id == 'none':
-        current_problems = ['none']
+    
+    if problem_id == "none":
+        current_problems = ["none"]
     elif problem_id in current_problems:
         current_problems.remove(problem_id)
-        if 'none' in current_problems:
-            current_problems.remove('none')
+        if "none" in current_problems:
+            current_problems.remove("none")
     else:
-        if 'none' in current_problems:
+        if "none" in current_problems:
             current_problems = []
         current_problems.append(problem_id)
-
+    
     storage.save(user_id, "problems", current_problems)
-
-    await bot.edit_message_reply_markup(
-        chat_id=callback_query.message.chat.id,
-        message_id=callback_query.message.message_id,
+    
+    # Обновляем клавиатуру
+    await callback.message.edit_reply_markup(
         reply_markup=get_problems_inline_keyboard(current_problems)
     )
+    await callback.answer()
 
-    await bot.answer_callback_query(callback_query.id)
-
-@dp.callback_query_handler(lambda c: c.data == 'done', state=Form.problems)
-async def problems_done_handler(callback_query: types.CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "done", UserState.PROBLEMS)
+async def problems_done_handler(callback: CallbackQuery, state: FSMContext):
     """Завершение выбора проблем"""
-    user_id = callback_query.from_user.id
+    user_id = callback.from_user.id
     problems = storage.get(user_id, "problems")
-
+    
     if not problems:
-        await bot.answer_callback_query(callback_query.id, "Выберите хотя бы одну проблему или 'Нет проблем'")
+        await callback.answer("Выберите хотя бы одну проблему или 'Нет проблем'", show_alert=True)
         return
+    
+    await callback.answer("Выбор сохранён!")
+    await callback.message.answer("Есть ли чувствительная кожа головы?", reply_markup=get_yes_no_menu())
+    await state.set_state(UserState.SCALP)
 
-    await bot.answer_callback_query(callback_query.id, "Выбор сохранён!")
-    await bot.send_message(callback_query.message.chat.id, "Есть ли чувствительная кожа головы?", reply_markup=get_yes_no_menu())
-    await Form.scalp.set()
-
-@dp.message_handler(state=Form.scalp)
-async def scalp_handler(message: types.Message, state: FSMContext):
+@router.message(UserState.SCALP)
+async def scalp_handler(message: Message, state: FSMContext):
     """Обработка выбора типа кожи головы"""
     if message.text not in ["Да", "Нет"]:
         await message.answer("Пожалуйста, ответьте Да или Нет:", reply_markup=get_yes_no_menu())
         return
-
+    
     storage.save(message.from_user.id, "scalp", message.text == "Да")
     await message.answer("Нужен дополнительный объем?", reply_markup=get_volume_menu())
-    await Form.volume.set()
+    await state.set_state(UserState.VOLUME)
 
-@dp.message_handler(state=Form.volume)
-async def volume_handler(message: types.Message, state: FSMContext):
+@router.message(UserState.VOLUME)
+async def volume_handler(message: Message, state: FSMContext):
     """Обработка выбора объема"""
     user_id = message.from_user.id
-
+    
     if "хочу объем" in message.text.lower():
         storage.save(user_id, "volume", True)
     elif "не нужно" in message.text.lower():
@@ -227,43 +228,43 @@ async def volume_handler(message: types.Message, state: FSMContext):
     else:
         await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_volume_menu())
         return
-
+    
     hair_type = storage.get(user_id, "hair_type")
-
+    
     if hair_type == "colored":
         await message.answer("Уточните цвет волос:", reply_markup=get_hair_color_menu())
-        await Form.color.set()
+        await state.set_state(UserState.COLOR)
     else:
         await send_hair_recommendation(message, state)
 
-@dp.message_handler(state=Form.color)
-async def color_handler(message: types.Message, state: FSMContext):
+@router.message(UserState.COLOR)
+async def color_handler(message: Message, state: FSMContext):
     """Обработка выбора цвета волос"""
     if message.text not in ["Шатенка", "Русая", "Рыжая", "Другой"]:
         await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_hair_color_menu())
         return
-
+    
     storage.save(message.from_user.id, "color", message.text)
     await send_hair_recommendation(message, state)
 
-async def send_hair_recommendation(message: types.Message, state: FSMContext):
-    """Формирование и отправка рекомендации для волос (с изображениями)"""
+async def send_hair_recommendation(message: Message, state: FSMContext):
+    """Формирование и отправка рекомендации для волос"""
     user_id = message.from_user.id
     data = storage.get(user_id)
-
+    
     if not data:
         await message.answer("Произошла ошибка. Давайте начнём заново:", reply_markup=get_main_menu())
-        await Form.main.set()
+        await state.set_state(UserState.MAIN)
         return
-
+    
     hair_type = data.get("hair_type", "colored")
     base_rec = HAIR_BASE_RECOMMENDATIONS.get(hair_type, HAIR_BASE_RECOMMENDATIONS["colored"])
     
-    # Начинаем с базового ухода
+    # Формируем ответ
     response = [base_rec["title"]]
     response.extend(base_rec["products"])
     
-    # Добавляем проблемы
+    # Проблемы
     problems = data.get("problems", [])
     if problems and 'none' not in problems:
         for prob in problems:
@@ -292,7 +293,7 @@ async def send_hair_recommendation(message: types.Message, state: FSMContext):
     response.append(f"\n\n{LOCATIONS}\n\n{REC_DELIVERY_TEXT}")
     response.append(f"\n🔄 *Для нового подбора нажмите «Начать заново»*")
     
-    # Используем изображение базового ухода как основное
+    # Отправляем с фото
     main_image = base_rec.get("image", "https://via.placeholder.com/400x200/000000/FFF?text=Уход+за+волосами")
     
     try:
@@ -305,29 +306,29 @@ async def send_hair_recommendation(message: types.Message, state: FSMContext):
         logger.error(f"Ошибка отправки фото: {e}")
         await message.answer("\n".join(response), reply_markup=get_final_menu())
     
-    await Form.result.set()
+    await state.set_state(UserState.RESULT)
 
 # ========== ФИНАЛЬНЫЕ ДЕЙСТВИЯ ==========
 
-@dp.message_handler(text="📍 Точки продаж", state='*')
-async def show_locations(message: types.Message):
+@router.message(F.text == "📍 Точки продаж")
+async def show_locations(message: Message):
     """Показать точки продаж"""
     await message.answer(LOCATIONS, reply_markup=get_final_menu())
 
-@dp.message_handler(text="🚚 Заказать доставку", state='*')
-async def show_delivery(message: types.Message):
+@router.message(F.text == "🚚 Заказать доставку")
+async def show_delivery(message: Message):
     """Показать информацию о доставке"""
     await message.answer(REC_DELIVERY_TEXT, reply_markup=get_final_menu())
 
-@dp.message_handler(text="🔄 Новый подбор", state='*')
-async def new_selection(message: types.Message, state: FSMContext):
+@router.message(F.text == "🔄 Новый подбор")
+async def new_selection(message: Message, state: FSMContext):
     """Новый подбор"""
     await cmd_start(message, state)
 
-# ========== ОБРАБОТКА НЕИЗВЕСТНЫХ СООБЩЕНИЙ ==========
+# ========== НЕИЗВЕСТНЫЕ СООБЩЕНИЯ ==========
 
-@dp.message_handler(state='*')
-async def unknown_message(message: types.Message):
+@router.message()
+async def unknown_message(message: Message):
     """Обработка неизвестных сообщений"""
     await message.answer(
         "Пожалуйста, используйте кнопки для навигации.\n"
@@ -337,21 +338,13 @@ async def unknown_message(message: types.Message):
 
 # ========== ЗАПУСК БОТА ==========
 
-async def on_startup(dp):
-    """Действия при запуске бота"""
-    logger.info("✅ Бот успешно запущен!")
-    print("=" * 50)
-    print("🤖 БОТ РАБОТАЕТ НА RENDER.COM!")
-    print("=" * 50)
+async def main():
+    """Основная функция запуска"""
+    logger.info("🚀 Запуск бота...")
+    
+    # Удаляем вебхук (если есть) и запускаем поллинг
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
-async def on_shutdown(dp):
-    """Действия при остановке бота"""
-    logger.info("Бот остановлен")
-
-if __name__ == '__main__':
-    executor.start_polling(
-        dp, 
-        skip_updates=True,
-        on_startup=on_startup,
-        on_shutdown=on_shutdown
-    )
+if __name__ == "__main__":
+    asyncio.run(main())
