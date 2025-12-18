@@ -1,20 +1,20 @@
 services:
   - type: web
-    name: telegram-cosmetics-bot-final
+    name: salon-beauty-bot-final
     env: python
     region: frankfurt
     plan: free
     buildCommand: |
       echo "=== УСТАНОВКА ЗАВИСИМОСТЕЙ ==="
       python --version
-      pip install --upgrade pip setuptools wheel
+      pip install --upgrade pip
       pip install -r requirements.txt
-      echo "=== УСТАНОВКА ЗАВЕРШЕНА ==="
+      echo "=== ЗАВИСИМОСТИ УСТАНОВЛЕНЫ ==="
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
         sync: false
-        value: "ВАШ_ТОКЕН_БОТА_ЗДЕСЬ"
+        value: "ВАШ_ТОКЕН_ЗДЕСЬ"
       - key: ADMIN_ID
         sync: false
         value: ""
