@@ -1,13 +1,22 @@
 services:
   - type: web
-    name: telegram-cosmetics-bot
+    name: telegram-cosmetics-bot-final
     env: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    region: frankfurt
+    plan: free
+    buildCommand: |
+      echo "=== УСТАНОВКА ЗАВИСИМОСТЕЙ ==="
+      python --version
+      pip install --upgrade pip setuptools wheel
+      pip install -r requirements.txt
+      echo "=== УСТАНОВКА ЗАВЕРШЕНА ==="
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
         sync: false
+        value: "ВАШ_ТОКЕН_БОТА_ЗДЕСЬ"
       - key: ADMIN_ID
         sync: false
-    plan: free
+        value: ""
     autoDeploy: true
+    healthCheckPath: /health
