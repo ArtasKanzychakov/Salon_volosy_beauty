@@ -1,12 +1,14 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, F, Router
+from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Message, CallbackQuery
+
 from config import BOT_TOKEN, WELCOME_TEXT
 from keyboards import (
     get_main_menu, get_body_care_menu, get_hair_type_menu,
@@ -21,139 +23,141 @@ from recommendations import (
     LOCATIONS, DELIVERY_TEXT as REC_DELIVERY_TEXT
 )
 
+# ========== НАСТРОЙКА ==========
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ИСПРАВЛЕННАЯ ИНИЦИАЛИЗАЦИЯ БОТА (Ключевое изменение!)
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
 
-class UserState:
-    MAIN = "main"
-    BODY = "body"
-    HAIR_TYPE = "hair_type"
-    PROBLEMS = "problems"
-    SCALP = "scalp"
-    VOLUME = "volume"
-    COLOR = "color"
-    RESULT = "result"
+# ========== СОСТОЯНИЯ (КОРРЕКТНО) ==========
+class Form(StatesGroup):
+    main = State()
+    body = State()
+    hair_type = State()
+    problems = State()
+    scalp = State()
+    volume = State()
+    color = State()
+    result = State()
 
-# ========== ОСНОВНЫЕ КОМАНДЫ ==========
-@router.message(CommandStart())
+# ========== ХЕНДЛЕРЫ ==========
+
+# ---- Старт и навигация ----
+@router.message(CommandStart(), Command("restart"))
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
     storage.delete(message.from_user.id)
     await message.answer(WELCOME_TEXT, reply_markup=get_main_menu())
-    await state.set_state(UserState.MAIN)
-
-@router.message(Command("restart"))
-async def cmd_restart(message: Message, state: FSMContext):
-    await cmd_start(message, state)
+    await state.set_state(Form.main)
 
 @router.message(F.text == "◀️ Назад")
 async def cmd_back(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state in [UserState.BODY, UserState.HAIR_TYPE, UserState.PROBLEMS, 
-                         UserState.SCALP, UserState.VOLUME, UserState.COLOR, UserState.RESULT]:
-        await message.answer("Главное меню:", reply_markup=get_main_menu())
-        await state.set_state(UserState.MAIN)
-    else:
-        await cmd_start(message, state)
+    await state.clear()
+    await cmd_start(message, state)
 
-# ========== ГЛАВНОЕ МЕНЮ ==========
-@router.message(F.text == "🧴 Уход за телом", UserState.MAIN)
+# ---- Главное меню ----
+@router.message(F.text == "🧴 Уход за телом", Form.main)
 async def body_care_handler(message: Message, state: FSMContext):
     await message.answer("Выберите задачу для кожи тела:", reply_markup=get_body_care_menu())
-    await state.set_state(UserState.BODY)
+    await state.set_state(Form.body)
 
-@router.message(F.text == "💇‍♀️ Уход за волосами", UserState.MAIN)
+@router.message(F.text == "💇‍♀️ Уход за волосами", Form.main)
 async def hair_care_handler(message: Message, state: FSMContext):
     await message.answer("Ваши волосы окрашены?", reply_markup=get_hair_type_menu())
-    await state.set_state(UserState.HAIR_TYPE)
+    await state.set_state(Form.hair_type)
 
-# ========== УХОД ЗА ТЕЛОМ ==========
-@router.message(UserState.BODY)
+# ---- Уход за телом ----
+@router.message(Form.body)
 async def body_type_handler(message: Message, state: FSMContext):
-    body_type_map = {
+    mapping = {
         "Общий уход и увлажнение": "general",
         "Сухая кожа": "dry",
         "Чувствительная кожа": "sensitive",
         "Борьба с целлюлитом": "cellulite"
     }
-    if message.text not in body_type_map:
-        await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_body_care_menu())
+    
+    if message.text not in mapping:
+        await message.answer("Выберите вариант из списка:", reply_markup=get_body_care_menu())
         return
-    key = body_type_map[message.text]
-    recommendation = BODY_CARE_RECOMMENDATIONS[key]
-    products_text = "\n".join(recommendation["products"])
-    response = f"{recommendation['title']}\n\n{products_text}\n\n{LOCATIONS}\n\n{REC_DELIVERY_TEXT}\n\n🔄 *Для нового подбора нажмите «Начать заново»*"
+    
+    rec_key = mapping[message.text]
+    rec = BODY_CARE_RECOMMENDATIONS[rec_key]
+    text = f"{rec['title']}\n\n" + "\n".join(rec['products']) + f"\n\n{LOCATIONS}\n\n{REC_DELIVERY_TEXT}"
+    
     try:
-        await message.answer_photo(photo=recommendation["image"], caption=response, reply_markup=get_final_menu())
-    except Exception as e:
-        logger.error(f"Ошибка отправки фото: {e}")
-        await message.answer(response, reply_markup=get_final_menu())
-    await state.set_state(UserState.RESULT)
+        await message.answer_photo(rec["image"], caption=text, reply_markup=get_final_menu())
+    except:
+        await message.answer(text, reply_markup=get_final_menu())
+    
+    await state.set_state(Form.result)
 
-# ========== УХОД ЗА ВОЛОСАМИ ==========
-@router.message(UserState.HAIR_TYPE)
+# ---- Уход за волосами (Начало) ----
+@router.message(Form.hair_type)
 async def hair_type_handler(message: Message, state: FSMContext):
-    text = message.text
-    if "блондинка" in text.lower():
+    text = message.text.lower()
+    if "блондинка" in text:
         hair_type = "blonde"
-    elif "окрашенные" in text.lower():
+    elif "окрашенные" in text:
         hair_type = "colored"
-    elif "натуральные" in text.lower():
+    elif "натуральные" in text:
         hair_type = "natural"
     else:
-        await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_hair_type_menu())
+        await message.answer("Выберите вариант из списка:", reply_markup=get_hair_type_menu())
         return
+    
     storage.save(message.from_user.id, "hair_type", hair_type)
-    await message.answer("🔧 Выберите проблемы волос (можно несколько):")
-    await message.answer("Нажмите на проблему для выбора:", reply_markup=get_problems_inline_keyboard())
-    await state.set_state(UserState.PROBLEMS)
+    await message.answer("Выберите проблемы волос:", reply_markup=get_problems_inline_keyboard())
+    await state.set_state(Form.problems)
 
-@router.callback_query(F.data.startswith("prob_"), UserState.PROBLEMS)
-async def process_problem_callback(callback: CallbackQuery, state: FSMContext):
-    problem_id = callback.data.replace("prob_", "")
+# ---- Выбор проблем (Инлайн-кнопки) ----
+@router.callback_query(F.data.startswith("prob_"), Form.problems)
+async def process_problem(callback: CallbackQuery, state: FSMContext):
+    prob_id = callback.data.replace("prob_", "")
     user_id = callback.from_user.id
-    current_problems = storage.get(user_id, "problems") or []
-    if problem_id == "none":
-        current_problems = ["none"]
-    elif problem_id in current_problems:
-        current_problems.remove(problem_id)
-        if "none" in current_problems:
-            current_problems.remove("none")
+    problems = storage.get(user_id, "problems") or []
+    
+    if prob_id == "none":
+        problems = ["none"]
+    elif prob_id in problems:
+        problems.remove(prob_id)
+        if "none" in problems:
+            problems.remove("none")
     else:
-        if "none" in current_problems:
-            current_problems = []
-        current_problems.append(problem_id)
-    storage.save(user_id, "problems", current_problems)
-    await callback.message.edit_reply_markup(reply_markup=get_problems_inline_keyboard(current_problems))
+        if "none" in problems:
+            problems = []
+        problems.append(prob_id)
+    
+    storage.save(user_id, "problems", problems)
+    await callback.message.edit_reply_markup(reply_markup=get_problems_inline_keyboard(problems))
     await callback.answer()
 
-@router.callback_query(F.data == "done", UserState.PROBLEMS)
-async def problems_done_handler(callback: CallbackQuery, state: FSMContext):
-    user_id = callback.from_user.id
-    problems = storage.get(user_id, "problems")
+@router.callback_query(F.data == "done", Form.problems)
+async def problems_done(callback: CallbackQuery, state: FSMContext):
+    problems = storage.get(callback.from_user.id, "problems")
     if not problems:
-        await callback.answer("Выберите хотя бы одну проблему или 'Нет проблем'", show_alert=True)
+        await callback.answer("Выберите хотя бы одну проблему", show_alert=True)
         return
-    await callback.answer("Выбор сохранён!")
+    
+    await callback.answer("Сохранено!")
     await callback.message.answer("Есть ли чувствительная кожа головы?", reply_markup=get_yes_no_menu())
-    await state.set_state(UserState.SCALP)
+    await state.set_state(Form.scalp)
 
-@router.message(UserState.SCALP)
+# ---- Чувствительная кожа головы ----
+@router.message(Form.scalp)
 async def scalp_handler(message: Message, state: FSMContext):
     if message.text not in ["Да", "Нет"]:
-        await message.answer("Пожалуйста, ответьте Да или Нет:", reply_markup=get_yes_no_menu())
+        await message.answer("Ответьте Да или Нет:", reply_markup=get_yes_no_menu())
         return
+    
     storage.save(message.from_user.id, "scalp", message.text == "Да")
     await message.answer("Нужен дополнительный объем?", reply_markup=get_volume_menu())
-    await state.set_state(UserState.VOLUME)
+    await state.set_state(Form.volume)
 
-@router.message(UserState.VOLUME)
+# ---- Объем ----
+@router.message(Form.volume)
 async def volume_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
     if "хочу объем" in message.text.lower():
@@ -161,62 +165,87 @@ async def volume_handler(message: Message, state: FSMContext):
     elif "не нужно" in message.text.lower():
         storage.save(user_id, "volume", False)
     else:
-        await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_volume_menu())
+        await message.answer("Выберите вариант из списка:", reply_markup=get_volume_menu())
         return
+    
+    # Если волосы окрашены, спрашиваем цвет
     hair_type = storage.get(user_id, "hair_type")
     if hair_type == "colored":
         await message.answer("Уточните цвет волос:", reply_markup=get_hair_color_menu())
-        await state.set_state(UserState.COLOR)
+        await state.set_state(Form.color)
     else:
-        await send_hair_recommendation(message, state)
+        await send_hair_final(message, state)
 
-@router.message(UserState.COLOR)
+# ---- Цвет для окрашенных ----
+@router.message(Form.color)
 async def color_handler(message: Message, state: FSMContext):
     if message.text not in ["Шатенка", "Русая", "Рыжая", "Другой"]:
-        await message.answer("Пожалуйста, выберите вариант из списка:", reply_markup=get_hair_color_menu())
+        await message.answer("Выберите вариант из списка:", reply_markup=get_hair_color_menu())
         return
+    
     storage.save(message.from_user.id, "color", message.text)
-    await send_hair_recommendation(message, state)
+    await send_hair_final(message, state)
 
-async def send_hair_recommendation(message: Message, state: FSMContext):
+# ---- Финальная рекомендация для волос ----
+async def send_hair_final(message: Message, state: FSMContext):
     user_id = message.from_user.id
     data = storage.get(user_id)
+    
     if not data:
-        await message.answer("Произошла ошибка. Давайте начнём заново:", reply_markup=get_main_menu())
-        await state.set_state(UserState.MAIN)
+        await cmd_start(message, state)
         return
+    
+    # Собираем рекомендации
+    rec_parts = []
     hair_type = data.get("hair_type", "colored")
     base_rec = HAIR_BASE_RECOMMENDATIONS.get(hair_type, HAIR_BASE_RECOMMENDATIONS["colored"])
-    response = [base_rec["title"]]
-    response.extend(base_rec["products"])
+    
+    rec_parts.append(base_rec["title"])
+    rec_parts.extend(base_rec["products"])
+    
+    # Проблемы
     problems = data.get("problems", [])
     if problems and 'none' not in problems:
         for prob in problems:
             if prob in HAIR_PROBLEMS_RECOMMENDATIONS:
-                response.append(f"\n{HAIR_PROBLEMS_RECOMMENDATIONS[prob]['title']}")
-                response.extend(HAIR_PROBLEMS_RECOMMENDATIONS[prob]["products"])
+                rec_parts.append("")
+                rec_parts.append(HAIR_PROBLEMS_RECOMMENDATIONS[prob]["title"])
+                rec_parts.extend(HAIR_PROBLEMS_RECOMMENDATIONS[prob]["products"])
+    
+    # Чувствительная кожа
     if data.get("scalp"):
-        response.append(f"\n{SENSITIVE_SCALP_RECOMMENDATION['title']}")
-        response.extend(SENSITIVE_SCALP_RECOMMENDATION["products"])
+        rec_parts.append("")
+        rec_parts.append(SENSITIVE_SCALP_RECOMMENDATION["title"])
+        rec_parts.extend(SENSITIVE_SCALP_RECOMMENDATION["products"])
+    
+    # Объем
     if data.get("volume"):
-        response.append(f"\n{VOLUME_RECOMMENDATION['title']}")
-        response.extend(VOLUME_RECOMMENDATION["products"])
+        rec_parts.append("")
+        rec_parts.append(VOLUME_RECOMMENDATION["title"])
+        rec_parts.extend(VOLUME_RECOMMENDATION["products"])
+    
+    # Цвет
     if hair_type == "colored":
-        hair_color = data.get("color", "")
-        if hair_color in COLOR_MASKS:
-            response.append(f"\n{COLOR_MASKS[hair_color]['title']}")
-            response.extend(COLOR_MASKS[hair_color]["products"])
-    response.append(f"\n\n{LOCATIONS}\n\n{REC_DELIVERY_TEXT}")
-    response.append(f"\n🔄 *Для нового подбора нажмите «Начать заново»*")
-    main_image = base_rec.get("image", "https://via.placeholder.com/400x200/000000/FFF?text=Уход+за+волосами")
+        color = data.get("color", "")
+        if color in COLOR_MASKS:
+            rec_parts.append("")
+            rec_parts.append(COLOR_MASKS[color]["title"])
+            rec_parts.extend(COLOR_MASKS[color]["products"])
+    
+    # Собираем итог
+    final_text = "\n".join(rec_parts)
+    final_text += f"\n\n{LOCATIONS}\n\n{REC_DELIVERY_TEXT}\n\n🔄 Для нового подбора нажмите «Новый подбор»"
+    
+    # Отправляем
     try:
-        await message.answer_photo(photo=main_image, caption="\n".join(response), reply_markup=get_final_menu())
+        await message.answer_photo(base_rec["image"], caption=final_text, reply_markup=get_final_menu())
     except Exception as e:
-        logger.error(f"Ошибка отправки фото: {e}")
-        await message.answer("\n".join(response), reply_markup=get_final_menu())
-    await state.set_state(UserState.RESULT)
+        logger.error(f"Фото не отправлено: {e}")
+        await message.answer(final_text, reply_markup=get_final_menu())
+    
+    await state.set_state(Form.result)
 
-# ========== ФИНАЛЬНЫЕ ДЕЙСТВИЯ ==========
+# ---- Финальные действия ----
 @router.message(F.text == "📍 Точки продаж")
 async def show_locations(message: Message):
     await message.answer(LOCATIONS, reply_markup=get_final_menu())
@@ -226,19 +255,21 @@ async def show_delivery(message: Message):
     await message.answer(REC_DELIVERY_TEXT, reply_markup=get_final_menu())
 
 @router.message(F.text == "🔄 Новый подбор")
-async def new_selection(message: Message, state: FSMContext):
+async def new_search(message: Message, state: FSMContext):
     await cmd_start(message, state)
 
-# ========== НЕИЗВЕСТНЫЕ СООБЩЕНИЯ ==========
+# ---- Всё остальное ----
 @router.message()
-async def unknown_message(message: Message):
-    await message.answer("Пожалуйста, используйте кнопки для навигации.\nЕсли хотите начать заново, нажмите /start", reply_markup=get_main_menu())
+async def unknown(message: Message):
+    await message.answer("Используйте кнопки или команду /start", reply_markup=get_main_menu())
 
-# ========== ЗАПУСК БОТА ==========
+# ========== ЗАПУСК ==========
 async def main():
-    logger.info("🚀 Запуск бота...")
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
+    print("=" * 50)
+    print("🚀 БОТ ЗАПУСКАЕТСЯ НА RENDER.COM")
+    print("=" * 50)
     asyncio.run(main())
