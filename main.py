@@ -32,7 +32,7 @@ dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
 
-# ========== СОСТОЯНИЯ (КОРРЕКТНО) ==========
+# ========== СОСТОЯНИЯ ==========
 class Form(StatesGroup):
     main = State()
     body = State()
@@ -58,13 +58,13 @@ async def cmd_back(message: Message, state: FSMContext):
     await state.clear()
     await cmd_start(message, state)
 
-# ---- Главное меню ----
-@router.message(F.text == "🧴 Уход за телом", Form.main)
+# ---- Главное меню (ИСПРАВЛЕНО: добавлен F.state) ----
+@router.message(F.text == "🧴 Уход за телом", F.state == Form.main)
 async def body_care_handler(message: Message, state: FSMContext):
     await message.answer("Выберите задачу для кожи тела:", reply_markup=get_body_care_menu())
     await state.set_state(Form.body)
 
-@router.message(F.text == "💇‍♀️ Уход за волосами", Form.main)
+@router.message(F.text == "💇‍♀️ Уход за волосами", F.state == Form.main)
 async def hair_care_handler(message: Message, state: FSMContext):
     await message.answer("Ваши волосы окрашены?", reply_markup=get_hair_type_menu())
     await state.set_state(Form.hair_type)
@@ -168,7 +168,6 @@ async def volume_handler(message: Message, state: FSMContext):
         await message.answer("Выберите вариант из списка:", reply_markup=get_volume_menu())
         return
     
-    # Если волосы окрашены, спрашиваем цвет
     hair_type = storage.get(user_id, "hair_type")
     if hair_type == "colored":
         await message.answer("Уточните цвет волос:", reply_markup=get_hair_color_menu())
@@ -195,7 +194,6 @@ async def send_hair_final(message: Message, state: FSMContext):
         await cmd_start(message, state)
         return
     
-    # Собираем рекомендации
     rec_parts = []
     hair_type = data.get("hair_type", "colored")
     base_rec = HAIR_BASE_RECOMMENDATIONS.get(hair_type, HAIR_BASE_RECOMMENDATIONS["colored"])
@@ -203,7 +201,6 @@ async def send_hair_final(message: Message, state: FSMContext):
     rec_parts.append(base_rec["title"])
     rec_parts.extend(base_rec["products"])
     
-    # Проблемы
     problems = data.get("problems", [])
     if problems and 'none' not in problems:
         for prob in problems:
@@ -212,19 +209,16 @@ async def send_hair_final(message: Message, state: FSMContext):
                 rec_parts.append(HAIR_PROBLEMS_RECOMMENDATIONS[prob]["title"])
                 rec_parts.extend(HAIR_PROBLEMS_RECOMMENDATIONS[prob]["products"])
     
-    # Чувствительная кожа
     if data.get("scalp"):
         rec_parts.append("")
         rec_parts.append(SENSITIVE_SCALP_RECOMMENDATION["title"])
         rec_parts.extend(SENSITIVE_SCALP_RECOMMENDATION["products"])
     
-    # Объем
     if data.get("volume"):
         rec_parts.append("")
         rec_parts.append(VOLUME_RECOMMENDATION["title"])
         rec_parts.extend(VOLUME_RECOMMENDATION["products"])
     
-    # Цвет
     if hair_type == "colored":
         color = data.get("color", "")
         if color in COLOR_MASKS:
@@ -232,11 +226,9 @@ async def send_hair_final(message: Message, state: FSMContext):
             rec_parts.append(COLOR_MASKS[color]["title"])
             rec_parts.extend(COLOR_MASKS[color]["products"])
     
-    # Собираем итог
     final_text = "\n".join(rec_parts)
     final_text += f"\n\n{LOCATIONS}\n\n{REC_DELIVERY_TEXT}\n\n🔄 Для нового подбора нажмите «Новый подбор»"
     
-    # Отправляем
     try:
         await message.answer_photo(base_rec["image"], caption=final_text, reply_markup=get_final_menu())
     except Exception as e:
