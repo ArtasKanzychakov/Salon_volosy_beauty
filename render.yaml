@@ -4,19 +4,9 @@ services:
     env: python
     region: frankfurt
     plan: free
-    buildCommand: |
-      echo "=== УСТАНОВКА ЗАВИСИМОСТЕЙ ==="
-      python --version
-      pip install --upgrade pip
-      pip install -r requirements.txt
-      echo "=== ЗАВИСИМОСТИ УСТАНОВЛЕНЫ ==="
+    buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
         sync: false
-        value: "ВАШ_ТОКЕН_ЗДЕСЬ"
-      - key: ADMIN_ID
-        sync: false
-        value: ""
     autoDeploy: true
-    healthCheckPath: /health
