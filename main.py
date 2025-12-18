@@ -1,5 +1,9 @@
 import asyncio
 import logging
+import os
+from contextlib import suppress
+
+from aiohttp import web
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -23,16 +27,17 @@ from recommendations import (
     LOCATIONS, DELIVERY_TEXT as REC_DELIVERY_TEXT
 )
 
-# ========== НАСТРОЙКА ==========
+# ========== НАСТРОЙКА ЛОГГИРОВАНИЯ ==========
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ========== ИНИЦИАЛИЗАЦИЯ КОМПОНЕНТОВ БОТА ==========
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
 
-# ========== СОСТОЯНИЯ ==========
+# ========== СОСТОЯНИЯ БОТА ==========
 class Form(StatesGroup):
     main = State()
     body = State()
@@ -43,7 +48,7 @@ class Form(StatesGroup):
     color = State()
     result = State()
 
-# ========== ХЕНДЛЕРЫ ==========
+# ========== ОСНОВНАЯ ЛОГИКА БОТА ==========
 
 # ---- Старт и навигация ----
 @router.message(CommandStart(), Command("restart"))
@@ -58,7 +63,7 @@ async def cmd_back(message: Message, state: FSMContext):
     await state.clear()
     await cmd_start(message, state)
 
-# ---- Главное меню (ИСПРАВЛЕНО: добавлен F.state) ----
+# ---- Главное меню ----
 @router.message(F.text == "🧴 Уход за телом", F.state == Form.main)
 async def body_care_handler(message: Message, state: FSMContext):
     await message.answer("Выберите задачу для кожи тела:", reply_markup=get_body_care_menu())
@@ -94,7 +99,7 @@ async def body_type_handler(message: Message, state: FSMContext):
     
     await state.set_state(Form.result)
 
-# ---- Уход за волосами (Начало) ----
+# ---- Уход за волосами ----
 @router.message(Form.hair_type)
 async def hair_type_handler(message: Message, state: FSMContext):
     text = message.text.lower()
@@ -112,7 +117,6 @@ async def hair_type_handler(message: Message, state: FSMContext):
     await message.answer("Выберите проблемы волос:", reply_markup=get_problems_inline_keyboard())
     await state.set_state(Form.problems)
 
-# ---- Выбор проблем (Инлайн-кнопки) ----
 @router.callback_query(F.data.startswith("prob_"), Form.problems)
 async def process_problem(callback: CallbackQuery, state: FSMContext):
     prob_id = callback.data.replace("prob_", "")
@@ -145,7 +149,6 @@ async def problems_done(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("Есть ли чувствительная кожа головы?", reply_markup=get_yes_no_menu())
     await state.set_state(Form.scalp)
 
-# ---- Чувствительная кожа головы ----
 @router.message(Form.scalp)
 async def scalp_handler(message: Message, state: FSMContext):
     if message.text not in ["Да", "Нет"]:
@@ -156,7 +159,6 @@ async def scalp_handler(message: Message, state: FSMContext):
     await message.answer("Нужен дополнительный объем?", reply_markup=get_volume_menu())
     await state.set_state(Form.volume)
 
-# ---- Объем ----
 @router.message(Form.volume)
 async def volume_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
@@ -175,7 +177,6 @@ async def volume_handler(message: Message, state: FSMContext):
     else:
         await send_hair_final(message, state)
 
-# ---- Цвет для окрашенных ----
 @router.message(Form.color)
 async def color_handler(message: Message, state: FSMContext):
     if message.text not in ["Шатенка", "Русая", "Рыжая", "Другой"]:
@@ -185,7 +186,6 @@ async def color_handler(message: Message, state: FSMContext):
     storage.save(message.from_user.id, "color", message.text)
     await send_hair_final(message, state)
 
-# ---- Финальная рекомендация для волос ----
 async def send_hair_final(message: Message, state: FSMContext):
     user_id = message.from_user.id
     data = storage.get(user_id)
@@ -250,18 +250,64 @@ async def show_delivery(message: Message):
 async def new_search(message: Message, state: FSMContext):
     await cmd_start(message, state)
 
-# ---- Всё остальное ----
+# ---- Неизвестные сообщения ----
 @router.message()
 async def unknown(message: Message):
     await message.answer("Используйте кнопки или команду /start", reply_markup=get_main_menu())
 
-# ========== ЗАПУСК ==========
-async def main():
+# ========== HTTP-СЕРВЕР ДЛЯ RENDER ==========
+async def health_check(request):
+    """Простой обработчик для проверки здоровья сервиса."""
+    return web.Response(text="✅ Бот работает")
+
+async def start_bot(app):
+    """Запускает бота как фоновую задачу."""
+    logger.info("🚀 Запуск Telegram бота...")
+    # Удаляем старые обновления и запускаем polling
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    # Запускаем поллинг в фоне
+    app['bot_polling'] = asyncio.create_task(dp.start_polling(bot))
+    logger.info("🤖 Бот запущен и готов к работе")
+
+async def cleanup_bot(app):
+    """Корректно останавливает бота при завершении работы."""
+    logger.info("🛑 Остановка бота...")
+    # Отменяем задачу поллинга
+    if 'bot_polling' in app:
+        app['bot_polling'].cancel()
+        # Ждем отмены, игнорируя исключение CancelledError
+        with suppress(asyncio.CancelledError):
+            await app['bot_polling']
+    # Закрываем сессию бота
+    await bot.session.close()
+    logger.info("Бот остановлен")
+
+def create_web_app():
+    """Создает и настраивает веб-приложение."""
+    app = web.Application()
+    # Добавляем маршруты для проверки здоровья
+    app.router.add_get('/', health_check)
+    app.router.add_get('/health', health_check)
+    
+    # Настраиваем запуск и остановку бота
+    app.on_startup.append(start_bot)
+    app.on_cleanup.append(cleanup_bot)
+    
+    return app
+
+# ========== ТОЧКА ВХОДА ==========
+def main():
+    """Основная функция запуска приложения."""
+    print("=" * 50)
+    print("🚀 ЗАПУСК ПРИЛОЖЕНИЯ НА RENDER.COM")
+    print("=" * 50)
+    
+    # Получаем порт из переменной окружения (Render устанавливает его)
+    port = int(os.environ.get("PORT", 8080))
+    
+    # Создаем и запускаем веб-приложение
+    app = create_web_app()
+    web.run_app(app, host='0.0.0.0', port=port)
 
 if __name__ == "__main__":
-    print("=" * 50)
-    print("🚀 БОТ ЗАПУСКАЕТСЯ НА RENDER.COM")
-    print("=" * 50)
-    asyncio.run(main())
+    main()
