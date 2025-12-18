@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telegram-cosmetics-bot"
+version = "1.0.0"
+dependencies = [
+    "aiogram==2.25.1",
+    "python-dotenv>=1.0.0",
+    "aiohttp==3.8.0",
+]
+requires-python = ">=3.9, <3.13"
+
+[tool.render]
+python-version = "3.9.18"
+build-command = "pip install -r requirements.txt"
+start-command = "python main.py"
