@@ -1,5 +1,37 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
+# Создаем алиасы для совместимости с main.py
+def get_main_menu():
+    return main_menu()
+
+def get_back_menu():
+    return back_button()
+
+def get_restart_button():
+    return restart_button()
+
+def get_body_care_menu():
+    return body_care()
+
+def get_hair_type_menu():
+    return hair_type()
+
+def get_problems_inline_keyboard(selected=None):
+    return problems_keyboard(selected)
+
+def get_yes_no_menu():
+    return yes_no()
+
+def get_volume_menu():
+    return volume()
+
+def get_hair_color_menu():
+    return hair_color()
+
+def get_final_menu():
+    return final_actions()
+
+# Оригинальные функции (оставляем для обратной совместимости)
 def main_menu():
     kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     kb.add(KeyboardButton("🧴 Уход за телом"), KeyboardButton("💇‍♀️ Уход за волосами"))
@@ -39,9 +71,9 @@ def hair_type():
 def problems_keyboard(selected=None):
     if selected is None:
         selected = []
-    
+
     kb = InlineKeyboardMarkup(row_width=2)
-    
+
     problems = [
         ("Ломкость", "brittle"),
         ("Выпадение", "hair_loss"),
@@ -53,13 +85,13 @@ def problems_keyboard(selected=None):
         ("Поврежденные", "damaged"),
         ("Нет проблем", "none")
     ]
-    
+
     for text, code in problems:
         if code in selected:
             kb.insert(InlineKeyboardButton(f"✅ {text}", callback_data=f"prob_{code}"))
         else:
             kb.insert(InlineKeyboardButton(text, callback_data=f"prob_{code}"))
-    
+
     kb.add(InlineKeyboardButton("👍 Готово", callback_data="done"))
     return kb
 
