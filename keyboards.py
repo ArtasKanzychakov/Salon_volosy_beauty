@@ -1,79 +1,53 @@
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    ReplyKeyboardMarkup, KeyboardButton, 
+    InlineKeyboardMarkup, InlineKeyboardButton
+)
 
-# Создаем алиасы для совместимости с main.py
+# Главное меню
 def get_main_menu():
-    return main_menu()
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🧴 Уход за телом"), KeyboardButton(text="💇‍♀️ Уход за волосами")]
+        ],
+        resize_keyboard=True,
+        row_width=2
+    )
+    return kb
 
-def get_back_menu():
-    return back_button()
-
-def get_restart_button():
-    return restart_button()
-
+# Меню для тела
 def get_body_care_menu():
-    return body_care()
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Общий уход и увлажнение")],
+            [KeyboardButton(text="Сухая кожа")],
+            [KeyboardButton(text="Чувствительная кожа")],
+            [KeyboardButton(text="Борьба с целлюлитом")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True,
+        row_width=1
+    )
+    return kb
 
+# Тип волос
 def get_hair_type_menu():
-    return hair_type()
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👱‍♀️ Я блондинка")],
+            [KeyboardButton(text="🎨 Окрашенные (другой цвет)")],
+            [KeyboardButton(text="🌿 Натуральные волосы")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True,
+        row_width=1
+    )
+    return kb
 
+# Проблемы волос
 def get_problems_inline_keyboard(selected=None):
-    return problems_keyboard(selected)
-
-def get_yes_no_menu():
-    return yes_no()
-
-def get_volume_menu():
-    return volume()
-
-def get_hair_color_menu():
-    return hair_color()
-
-def get_final_menu():
-    return final_actions()
-
-# Оригинальные функции (оставляем для обратной совместимости)
-def main_menu():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(KeyboardButton("🧴 Уход за телом"), KeyboardButton("💇‍♀️ Уход за волосами"))
-    return kb
-
-def back_button():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("◀️ Назад"))
-    return kb
-
-def restart_button():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True)
-    kb.add(KeyboardButton("🔄 Начать заново"))
-    return kb
-
-def body_care():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    kb.add(
-        KeyboardButton("Общий уход и увлажнение"),
-        KeyboardButton("Сухая кожа"),
-        KeyboardButton("Чувствительная кожа"),
-        KeyboardButton("Борьба с целлюлитом"),
-        KeyboardButton("◀️ Назад")
-    )
-    return kb
-
-def hair_type():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    kb.add(
-        KeyboardButton("👱‍♀️ Я блондинка"),
-        KeyboardButton("🎨 Окрашенные (другой цвет)"),
-        KeyboardButton("🌿 Натуральные волосы"),
-        KeyboardButton("◀️ Назад")
-    )
-    return kb
-
-def problems_keyboard(selected=None):
     if selected is None:
         selected = []
-
-    kb = InlineKeyboardMarkup(row_width=2)
-
+    
     problems = [
         ("Ломкость", "brittle"),
         ("Выпадение", "hair_loss"),
@@ -85,42 +59,68 @@ def problems_keyboard(selected=None):
         ("Поврежденные", "damaged"),
         ("Нет проблем", "none")
     ]
-
+    
+    buttons = []
     for text, code in problems:
         if code in selected:
-            kb.insert(InlineKeyboardButton(f"✅ {text}", callback_data=f"prob_{code}"))
+            buttons.append(InlineKeyboardButton(text=f"✅ {text}", callback_data=f"prob_{code}"))
         else:
-            kb.insert(InlineKeyboardButton(text, callback_data=f"prob_{code}"))
+            buttons.append(InlineKeyboardButton(text=text, callback_data=f"prob_{code}"))
+    
+    # Распределяем по 2 кнопки в ряд
+    rows = []
+    for i in range(0, len(buttons), 2):
+        rows.append(buttons[i:i+2])
+    
+    rows.append([InlineKeyboardButton(text="👍 Готово", callback_data="done")])
+    
+    return InlineKeyboardMarkup(inline_keyboard=rows)
 
-    kb.add(InlineKeyboardButton("👍 Готово", callback_data="done"))
-    return kb
-
-def yes_no():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(KeyboardButton("Да"), KeyboardButton("Нет"), KeyboardButton("◀️ Назад"))
-    return kb
-
-def volume():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(KeyboardButton("Да, хочу объем"), KeyboardButton("Нет, не нужно"), KeyboardButton("◀️ Назад"))
-    return kb
-
-def hair_color():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(
-        KeyboardButton("Шатенка"),
-        KeyboardButton("Русая"),
-        KeyboardButton("Рыжая"),
-        KeyboardButton("Другой"),
-        KeyboardButton("◀️ Назад")
+# Да/Нет
+def get_yes_no_menu():
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Да"), KeyboardButton(text="Нет")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True,
+        row_width=2
     )
     return kb
 
-def final_actions():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    kb.add(
-        KeyboardButton("🔄 Новый подбор"),
-        KeyboardButton("📍 Точки продаж"),
-        KeyboardButton("🚚 Заказать доставку")
+# Объем
+def get_volume_menu():
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Да, хочу объем"), KeyboardButton(text="Нет, не нужно")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True,
+        row_width=2
+    )
+    return kb
+
+# Цвет волос
+def get_hair_color_menu():
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Шатенка"), KeyboardButton(text="Русая")],
+            [KeyboardButton(text="Рыжая"), KeyboardButton(text="Другой")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True,
+        row_width=2
+    )
+    return kb
+
+# Финальное меню
+def get_final_menu():
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔄 Новый подбор")],
+            [KeyboardButton(text="📍 Точки продаж"), KeyboardButton(text="🚚 Заказать доставку")]
+        ],
+        resize_keyboard=True,
+        row_width=2
     )
     return kb
