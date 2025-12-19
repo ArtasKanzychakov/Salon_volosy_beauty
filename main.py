@@ -49,7 +49,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
-    
+
     def log_message(self, format, *args):
         pass
 
@@ -139,7 +139,7 @@ async def run_bot():
     print("=" * 50)
     print("🤖 БОТ ЗАПУЩЕН (Финальная версия)")
     print("=" * 50)
-    
+
     # Удаляем старые обновления и запускаем поллинг
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
@@ -149,7 +149,7 @@ def main():
     # Запускаем HTTP-сервер в отдельном потоке (для Render)
     http_thread = Thread(target=run_http_server, daemon=True)
     http_thread.start()
-    
+
     # Запускаем бота в основном потоке
     try:
         asyncio.run(run_bot())
@@ -158,7 +158,7 @@ def main():
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}", exc_info=True)
         return 1
-    
+
     return 0
 
 if __name__ == "__main__":
