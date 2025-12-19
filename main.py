@@ -33,7 +33,8 @@ class UserState(StatesGroup):
     HAIR_MENU = State()
 
 # ========== ИНИЦИАЛИЗАЦИЯ БОТА ==========
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
+# ИЗМЕНЕНИЕ: ParseMode.HTML вместо ParseMode.MARKDOWN
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 dp.include_router(router)
