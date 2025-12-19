@@ -49,26 +49,28 @@ class HealthHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+    
     def log_message(self, format, *args):
         pass
 
 def run_http_server():
+    """Запускает HTTP-сервер в отдельном потоке для Render"""
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthHandler)
     logger.info(f"🌐 HTTP-сервер запущен на порту {port}")
     server.serve_forever()
 
-# ========== ГЛАВНЫЙ ОБРАБОТЧИК (ЯДРО ИСПРАВЛЕНИЯ) ==========
+# ========== УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК (ОСНОВНАЯ ЛОГИКА) ==========
 @router.message()
 async def universal_handler(message: Message, state: FSMContext):
-    """УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК. Все сообщения идут сюда."""
-    user_text = message.text
+    """Главный обработчик всех сообщений"""
+    user_text = message.text.strip()
     current_state = await state.get_state()
     user_id = message.from_user.id
 
-    logger.info(f"[ВХОД] User {user_id}, State: {current_state}, Text: '{user_text}'")
+    logger.info(f"[ВХОД] Пользователь: {user_id}, Состояние: {current_state}, Текст: '{user_text}'")
 
-    # 1. Обработка команд /start, /restart и кнопки "Назад" в ЛЮБОМ состоянии
+    # 1. Команды, которые работают из любого состояния
     if user_text in ["/start", "/restart", "◀️ Назад", "🔄 Новый подбор"]:
         logger.info(f"Сброс состояния для {user_id}")
         await state.clear()
@@ -77,7 +79,15 @@ async def universal_handler(message: Message, state: FSMContext):
         await message.answer(WELCOME_TEXT, reply_markup=get_main_menu())
         return
 
-    # 2. Определяем, что делать на основе ТЕКУЩЕГО состояния
+    # 2. Финальные действия (из любого состояния)
+    if user_text == "📍 Точки продаж":
+        await message.answer(LOCATIONS_TEXT, reply_markup=get_final_menu())
+        return
+    if user_text == "🚚 Заказать доставку":
+        await message.answer(DELIVERY_TEXT, reply_markup=get_final_menu())
+        return
+
+    # 3. Логика в зависимости от текущего состояния
     if current_state == UserState.MAIN_MENU:
         if user_text == "🧴 Уход за телом":
             logger.info(f"Пользователь {user_id} -> состояние BODY_MENU")
@@ -95,7 +105,8 @@ async def universal_handler(message: Message, state: FSMContext):
         if user_text in BODY_RECOMMENDATIONS:
             logger.info(f"Пользователь {user_id} выбрал уход за телом: {user_text}")
             recommendation = BODY_RECOMMENDATIONS[user_text]
-            response = "\n".join(recommendation) + f"\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
+            response = "\n".join(recommendation)
+            response += f"\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
             await message.answer(response, reply_markup=get_final_menu())
             await state.set_state(UserState.MAIN_MENU)  # Возвращаем в главное меню
         else:
@@ -107,7 +118,8 @@ async def universal_handler(message: Message, state: FSMContext):
         if user_text in HAIR_RECOMMENDATIONS:
             logger.info(f"Пользователь {user_id} выбрал тип волос: {user_text}")
             recommendation = HAIR_RECOMMENDATIONS[user_text]
-            response = "\n".join(recommendation) + f"\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
+            response = "\n".join(recommendation)
+            response += f"\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
             await message.answer(response, reply_markup=get_final_menu())
             await state.set_state(UserState.MAIN_MENU)  # Возвращаем в главное меню
         else:
@@ -120,34 +132,33 @@ async def universal_handler(message: Message, state: FSMContext):
         await state.set_state(UserState.MAIN_MENU)
         await message.answer(WELCOME_TEXT, reply_markup=get_main_menu())
 
-# ========== ФИНАЛЬНЫЕ ДЕЙСТВИЯ (работают из любого состояния) ==========
-@router.message(F.text == "📍 Точки продаж")
-async def locations_handler(message: Message):
-    await message.answer(LOCATIONS_TEXT, reply_markup=get_final_menu())
-
-@router.message(F.text == "🚚 Заказать доставку")
-async def delivery_handler(message: Message):
-    await message.answer(DELIVERY_TEXT, reply_markup=get_final_menu())
-
 # ========== ЗАПУСК БОТА ==========
 async def run_bot():
+    """Основная функция запуска бота"""
     logger.info("🚀 Запуск Telegram бота...")
     print("=" * 50)
-    print("🤖 БОТ ЗАПУЩЕН (Упрощенная логика с одним обработчиком)")
+    print("🤖 БОТ ЗАПУЩЕН (Финальная версия)")
     print("=" * 50)
+    
+    # Удаляем старые обновления и запускаем поллинг
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 def main():
+    """Точка входа в приложение"""
+    # Запускаем HTTP-сервер в отдельном потоке (для Render)
     http_thread = Thread(target=run_http_server, daemon=True)
     http_thread.start()
+    
+    # Запускаем бота в основном потоке
     try:
         asyncio.run(run_bot())
     except KeyboardInterrupt:
-        logger.info("Бот остановлен")
+        logger.info("Бот остановлен пользователем")
     except Exception as e:
-        logger.error(f"Ошибка: {e}")
+        logger.error(f"Критическая ошибка: {e}", exc_info=True)
         return 1
+    
     return 0
 
 if __name__ == "__main__":
