@@ -18,11 +18,15 @@ from config import BOT_TOKEN, WELCOME_TEXT, LOCATIONS_TEXT, DELIVERY_TEXT
 from keyboards import (
     get_main_menu, get_body_menu, get_hair_type_menu,
     get_hair_color_menu, get_hair_care_menu, get_hair_problems_menu,
-    get_final_menu
+    get_hair_additional_menu, get_final_menu
 )
 from body_data import BODY_DATA
 from hair_data import HAIR_DATA
-from user_storage import save_user_data, get_user_data, clear_user_data
+from user_storage import (
+    save_user_data, get_user_data, clear_user_data,
+    add_selected_problem, get_selected_problems, clear_selected_problems
+)
+from multiselect import format_additional_problems
 
 # ========== НАСТРОЙКА ЛОГГИРОВАНИЯ ==========
 logging.basicConfig(
@@ -39,6 +43,7 @@ class UserState(StatesGroup):
     HAIR_COLOR = State()
     HAIR_CARE = State()
     HAIR_PROBLEMS = State()
+    HAIR_ADDITIONAL = State()
 
 # ========== ИНИЦИАЛИЗАЦИЯ БОТА ==========
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -77,12 +82,17 @@ def format_body_response(data):
     response += f"\n📸 {data['photo_note']}"
     return response
 
-def format_hair_response(data):
+def format_hair_response(data, selected_problems=None):
     response = f"{data['title']}\n\n"
     for product in data["products"]:
         response += f"• {product}\n"
     if "note" in data:
         response += f"\n<b>{data['note']}</b>\n"
+    
+    # Добавляем дополнительные проблемы если есть
+    if selected_problems:
+        response += format_additional_problems(selected_problems)
+    
     response += f"\n📸 {data['photo_note']}"
     return response
 
@@ -92,6 +102,7 @@ def format_hair_response(data):
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     clear_user_data(message.from_user.id)
+    clear_selected_problems(message.from_user.id)
     await state.clear()
     await state.set_state(UserState.MAIN_MENU)
     await message.answer(WELCOME_TEXT, reply_markup=get_main_menu())
@@ -100,6 +111,7 @@ async def cmd_start(message: Message, state: FSMContext):
 @router.message(lambda message: message.text == "◀️ Назад")
 async def back_handler(message: Message, state: FSMContext):
     current_state = await state.get_state()
+    user_id = message.from_user.id
     
     if current_state == UserState.BODY_MENU:
         await state.set_state(UserState.MAIN_MENU)
@@ -114,7 +126,7 @@ async def back_handler(message: Message, state: FSMContext):
         await message.answer("Выберите тип ваших волос:", reply_markup=get_hair_type_menu())
     
     elif current_state == UserState.HAIR_CARE:
-        user_data = get_user_data(message.from_user.id)
+        user_data = get_user_data(user_id)
         hair_type = user_data.get("hair_type")
         
         if hair_type == "colored":
@@ -126,6 +138,11 @@ async def back_handler(message: Message, state: FSMContext):
     
     elif current_state == UserState.HAIR_PROBLEMS:
         await state.set_state(UserState.HAIR_CARE)
+        await message.answer("Выберите категорию ухода:", reply_markup=get_hair_care_menu())
+    
+    elif current_state == UserState.HAIR_ADDITIONAL:
+        await state.set_state(UserState.HAIR_CARE)
+        clear_selected_problems(user_id)
         await message.answer("Выберите категорию ухода:", reply_markup=get_hair_care_menu())
     
     else:
@@ -254,6 +271,81 @@ async def hair_category_handler(message: Message, state: FSMContext):
         await message.answer(response, reply_markup=get_final_menu())
         await state.set_state(UserState.MAIN_MENU)
 
+# Выбор "Общий уход + особенности"
+@router.message(lambda message: message.text == "🧴 Общий уход + особенности")
+async def hair_general_with_problems_handler(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    hair_type = get_user_data(user_id, "hair_type")
+    hair_color = get_user_data(user_id, "hair_color")
+    
+    # Очищаем предыдущий выбор
+    clear_selected_problems(user_id)
+    
+    if hair_type == "colored":
+        if not hair_color:
+            await message.answer("Пожалуйста, сначала выберите цвет волос.")
+            return
+    
+    await state.set_state(UserState.HAIR_ADDITIONAL)
+    await message.answer(
+        "Выберите дополнительные особенности ваших волос:\n"
+        "(можно выбрать несколько, затем нажмите '✅ Готово')",
+        reply_markup=get_hair_additional_menu()
+    )
+
+# Обработка выбора дополнительных проблем
+@router.message(lambda message: message.text in [
+    "Сухость", "Тонкие волосы", "Пушистость", "Тусклость"
+])
+async def additional_problem_handler(message: Message):
+    user_id = message.from_user.id
+    problem = message.text
+    selected_problems = get_selected_problems(user_id)
+    
+    if problem in selected_problems:
+        # Убираем если уже выбрана
+        selected_problems.remove(problem)
+        await message.answer(f"❌ Убрано: {problem}")
+    else:
+        # Добавляем если не выбрана
+        add_selected_problem(user_id, problem)
+        await message.answer(f"✅ Добавлено: {problem}")
+    
+    # Показываем текущий выбор
+    current_selected = get_selected_problems(user_id)
+    if current_selected:
+        await message.answer(
+            f"<b>Вы выбрали:</b>\n• " + "\n• ".join(current_selected),
+            reply_markup=get_hair_additional_menu()
+        )
+
+# Завершение выбора дополнительных проблем
+@router.message(lambda message: message.text == "✅ Готово")
+async def finish_additional_handler(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    hair_type = get_user_data(user_id, "hair_type")
+    hair_color = get_user_data(user_id, "hair_color")
+    selected_problems = get_selected_problems(user_id)
+    
+    # Получаем базовые продукты
+    if hair_type == "colored":
+        if hair_color == "шатенка/русая":
+            data = HAIR_DATA[hair_type]["colors"]["шатенка/русая"]["general"]
+        elif hair_color == "рыжая":
+            data = HAIR_DATA[hair_type]["colors"]["рыжая"]["general"]
+    else:
+        data = HAIR_DATA[hair_type]["general"]
+    
+    # Формируем ответ с дополнительными проблемами
+    response = format_hair_response(data, selected_problems)
+    response += f"\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
+    
+    await message.answer(response, reply_markup=get_final_menu())
+    await state.set_state(UserState.MAIN_MENU)
+    
+    # Очищаем выбранные проблемы
+    clear_selected_problems(user_id)
+
 # Выбор конкретной проблемы
 @router.message(lambda message: message.text in [
     "Ломкость", "Выпадение", "Перхоть/зуд", "Секущиеся кончики",
@@ -278,7 +370,7 @@ async def run_bot():
     await bot.delete_webhook(drop_pending_updates=True)
     
     print("=" * 50)
-    print("🤖 БОТ ЗАПУЩЕН - Полная структура по документам")
+    print("🤖 БОТ ЗАПУЩЕН - С мультивыбором особенностей")
     print("=" * 50)
     
     await dp.start_polling(bot)
