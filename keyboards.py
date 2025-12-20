@@ -60,6 +60,7 @@ def get_hair_care_menu():
     kb = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🧴 Общий уход")],
+            [KeyboardButton(text="🧴 Общий уход + особенности")],
             [KeyboardButton(text="⚡ Специфические проблемы")],
             [KeyboardButton(text="❤️ Чувствительная кожа головы")],
             [KeyboardButton(text="💨 Объем")],
@@ -88,6 +89,24 @@ def get_hair_problems_menu():
                 KeyboardButton(text="Тонкие"),
                 KeyboardButton(text="Очень поврежденные")
             ],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True
+    )
+    return kb
+
+def get_hair_additional_menu():
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="Сухость"),
+                KeyboardButton(text="Тонкие волосы")
+            ],
+            [
+                KeyboardButton(text="Пушистость"),
+                KeyboardButton(text="Тусклость")
+            ],
+            [KeyboardButton(text="✅ Готово")],
             [KeyboardButton(text="◀️ Назад")]
         ],
         resize_keyboard=True
