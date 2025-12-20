@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: salon-beauty-bot-final
+    name: salon-beauty-bot
     env: python
     region: frankfurt
     plan: free
