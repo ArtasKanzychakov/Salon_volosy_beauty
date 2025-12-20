@@ -16,3 +16,20 @@ def get_user_data(user_id, key=None):
 def clear_user_data(user_id):
     if user_id in user_data:
         del user_data[user_id]
+
+# Функции для мультивыбора
+def add_selected_problem(user_id, problem):
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    if "selected_problems" not in user_data[user_id]:
+        user_data[user_id]["selected_problems"] = []
+    
+    if problem not in user_data[user_id]["selected_problems"]:
+        user_data[user_id]["selected_problems"].append(problem)
+
+def get_selected_problems(user_id):
+    return user_data.get(user_id, {}).get("selected_problems", [])
+
+def clear_selected_problems(user_id):
+    if user_id in user_data and "selected_problems" in user_data[user_id]:
+        user_data[user_id]["selected_problems"] = []
