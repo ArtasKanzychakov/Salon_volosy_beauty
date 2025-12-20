@@ -196,7 +196,11 @@ async def hair_type_handler(message: Message, state: FSMContext):
 @router.message(lambda message: message.text in ["Шатенка/Русая", "Рыжая"])
 async def hair_color_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
-    save_user_data(user_id, "hair_color", message.text)
+    if message.text == "Шатенка/Русая":
+        save_user_data(user_id, "hair_color", "шатенка/русая")
+    elif message.text == "Рыжая":
+        save_user_data(user_id, "hair_color", "рыжая")
+    
     await state.set_state(UserState.HAIR_CARE)
     await message.answer("Выберите категорию ухода:", reply_markup=get_hair_care_menu())
 
@@ -214,9 +218,9 @@ async def hair_category_handler(message: Message, state: FSMContext):
     
     if message.text == "🧴 Общий уход":
         if hair_type == "colored":
-            if hair_color == "Шатенка/Русая":
+            if hair_color == "шатенка/русая":
                 data = HAIR_DATA[hair_type]["colors"]["шатенка/русая"]["general"]
-            elif hair_color == "Рыжая":
+            elif hair_color == "рыжая":
                 data = HAIR_DATA[hair_type]["colors"]["рыжая"]["general"]
             else:
                 await message.answer("Пожалуйста, сначала выберите цвет волос.")
