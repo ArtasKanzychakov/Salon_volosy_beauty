@@ -94,7 +94,7 @@ def get_photo_categories_menu():
             [KeyboardButton(text="👱‍♀️ Блондинки")],
             [KeyboardButton(text="🎨 Окрашенные")],
             [KeyboardButton(text="🎨 Оттеночные маски")],
-            [KeyboardButton(text="🖼 Коллаж")],
+            [KeyboardButton(text="🖼 Коллажи")],
             [KeyboardButton(text="🔙 Назад")]
         ],
         resize_keyboard=True
@@ -105,10 +105,10 @@ def get_body_photos_menu():
         [KeyboardButton(text="Молочко для тела")],
         [KeyboardButton(text="Гидрофильное масло")],
         [KeyboardButton(text="Крем суфле")],
-        [KeyboardButton(text="Скраб для тела")],
-        [KeyboardButton(text="Гель для душа")],
+        [KeyboardButton(text="Скраб кофе/кокос")],
+        [KeyboardButton(text="Гель для душа вишня/манго/лимон")],
         [KeyboardButton(text="Баттер для тела")],
-        [KeyboardButton(text="Гиалуроновая кислота")],
+        [KeyboardButton(text="Гиалуроновая кислота для лица")],
         [KeyboardButton(text="🔙 К категориям")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -117,9 +117,9 @@ def get_hair_common_menu():
     buttons = [
         [KeyboardButton(text="Биолипидный спрей")],
         [KeyboardButton(text="Сухое масло спрей")],
-        [KeyboardButton(text="Масло ELIXIR")],
+        [KeyboardButton(text="масло ELIXIR")],
         [KeyboardButton(text="Молочко для волос")],
-        [KeyboardButton(text="Масло концентрат")],
+        [KeyboardButton(text="масло концентрат")],
         [KeyboardButton(text="Флюид для волос")],
         [KeyboardButton(text="Шампунь реконстракт")],
         [KeyboardButton(text="Маска реконстракт")],
@@ -130,18 +130,18 @@ def get_hair_common_menu():
 
 def get_blonde_photos_menu():
     buttons = [
-        [KeyboardButton(text="Шампунь для осветленных волос")],
-        [KeyboardButton(text="Кондиционер для осветленных волос")],
-        [KeyboardButton(text="Маска для осветленных волос")],
+        [KeyboardButton(text="Шампунь для осветленных волос с гиалуроновой кислотой")],
+        [KeyboardButton(text="Кондиционер для осветленных волос с гиалуроновой кислотой")],
+        [KeyboardButton(text="Маска для осветленных волос с гиалуроновой кислотой")],
         [KeyboardButton(text="🔙 К категориям")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_colored_photos_menu():
     buttons = [
-        [KeyboardButton(text="Шампунь для окрашенных волос")],
-        [KeyboardButton(text="Кондиционер для окрашенных волос")],
-        [KeyboardButton(text="Маска для окрашенных волос")],
+        [KeyboardButton(text="Шампунь для окрашенных волос с коллагеном")],
+        [KeyboardButton(text="Кондиционер для окрашенных волос с коллагеном")],
+        [KeyboardButton(text="Маска для окрашенных волос с коллагеном")],
         [KeyboardButton(text="🔙 К категориям")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -150,13 +150,27 @@ def get_tone_masks_menu():
     buttons = [
         [KeyboardButton(text="Оттеночная маска Холодный шоколад")],
         [KeyboardButton(text="Оттеночная маска Медный")],
+        [KeyboardButton(text="Оттеночная маска Розовая пудра")],
+        [KeyboardButton(text="Оттеночная маска Перламутр")],
         [KeyboardButton(text="🔙 К категориям")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_collage_menu():
     buttons = [
-        [KeyboardButton(text="Коллаж для блондинок")],
+        [KeyboardButton(text="Коллаж для блондинок (общий уход)")],
+        [KeyboardButton(text="Коллаж: Ломкость волос")],
+        [KeyboardButton(text="Коллаж: Тусклость")],
+        [KeyboardButton(text="Коллаж: Пушистость")],
+        [KeyboardButton(text="Коллаж: Тонкие волосы")],
+        [KeyboardButton(text="Коллаж: Поврежденные волосы")],
+        [KeyboardButton(text="Коллаж: Окрашенные (шатен/русая)")],
+        [KeyboardButton(text="Коллаж: Окрашенные (рыжая)")],
+        [KeyboardButton(text="Коллаж: Натуральные волосы")],
+        [KeyboardButton(text="Коллаж: Объем")],
+        [KeyboardButton(text="Коллаж: Чувствительная кожа головы")],
+        [KeyboardButton(text="Коллаж: Выпадение волос")],
+        [KeyboardButton(text="Коллаж: Перхоть/зуд")],
         [KeyboardButton(text="🔙 К категориям")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
