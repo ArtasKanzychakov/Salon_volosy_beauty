@@ -1,0 +1,171 @@
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+# === ОСНОВНЫЕ КЛАВИАТУРЫ ===
+def get_main_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🧴 Тело"), KeyboardButton(text="💇 Волосы")],
+            [KeyboardButton(text="📍 Точки"), KeyboardButton(text="🚚 Доставка")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_body_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Общий уход"), KeyboardButton(text="Сухая кожа")],
+            [KeyboardButton(text="Чувствительная"), KeyboardButton(text="Целлюлит")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_hair_type_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👱‍♀️ Блондинки (окрашенные)")],
+            [KeyboardButton(text="🎨 Окрашенные волосы")],
+            [KeyboardButton(text="🌿 Натуральные волосы")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_hair_color_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Шатенка/Русая")],
+            [KeyboardButton(text="Рыжая")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_hair_care_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🧴 Общий уход")],
+            [KeyboardButton(text="⚡ Специфические проблемы")],
+            [KeyboardButton(text="❤️ Чувствительная кожа головы")],
+            [KeyboardButton(text="💨 Объем")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_hair_problems_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Ломкость"), KeyboardButton(text="Выпадение")],
+            [KeyboardButton(text="Перхоть/зуд"), KeyboardButton(text="Секущиеся кончики")],
+            [KeyboardButton(text="Тусклость"), KeyboardButton(text="Пушистость")],
+            [KeyboardButton(text="Тонкие"), KeyboardButton(text="Очень поврежденные")],
+            [KeyboardButton(text="◀️ Назад")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_final_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔄 Новый подбор"), KeyboardButton(text="📍 Точки")],
+            [KeyboardButton(text="🚚 Доставка")]
+        ],
+        resize_keyboard=True
+    )
+
+# === АДМИН КЛАВИАТУРЫ ===
+def get_admin_main_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📤 Загрузить фото")],
+            [KeyboardButton(text="🗑 Удалить фото")],
+            [KeyboardButton(text="📊 Статус фото")],
+            [KeyboardButton(text="🔙 Выйти из админки")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_photo_categories_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🧴 Тело")],
+            [KeyboardButton(text="💇 Волосы - общие")],
+            [KeyboardButton(text="👱‍♀️ Блондинки")],
+            [KeyboardButton(text="🎨 Окрашенные")],
+            [KeyboardButton(text="🎨 Оттеночные маски")],
+            [KeyboardButton(text="🖼 Коллаж")],
+            [KeyboardButton(text="🔙 Назад")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_body_photos_menu():
+    buttons = [
+        [KeyboardButton(text="Молочко для тела")],
+        [KeyboardButton(text="Гидрофильное масло")],
+        [KeyboardButton(text="Крем суфле")],
+        [KeyboardButton(text="Скраб для тела")],
+        [KeyboardButton(text="Гель для душа")],
+        [KeyboardButton(text="Баттер для тела")],
+        [KeyboardButton(text="Гиалуроновая кислота")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_hair_common_menu():
+    buttons = [
+        [KeyboardButton(text="Биолипидный спрей")],
+        [KeyboardButton(text="Сухое масло спрей")],
+        [KeyboardButton(text="Масло ELIXIR")],
+        [KeyboardButton(text="Молочко для волос")],
+        [KeyboardButton(text="Масло концентрат")],
+        [KeyboardButton(text="Флюид для волос")],
+        [KeyboardButton(text="Шампунь реконстракт")],
+        [KeyboardButton(text="Маска реконстракт")],
+        [KeyboardButton(text="Протеиновый крем")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_blonde_photos_menu():
+    buttons = [
+        [KeyboardButton(text="Шампунь для осветленных волос")],
+        [KeyboardButton(text="Кондиционер для осветленных волос")],
+        [KeyboardButton(text="Маска для осветленных волос")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_colored_photos_menu():
+    buttons = [
+        [KeyboardButton(text="Шампунь для окрашенных волос")],
+        [KeyboardButton(text="Кондиционер для окрашенных волос")],
+        [KeyboardButton(text="Маска для окрашенных волос")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_tone_masks_menu():
+    buttons = [
+        [KeyboardButton(text="Оттеночная маска Холодный шоколад")],
+        [KeyboardButton(text="Оттеночная маска Медный")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_collage_menu():
+    buttons = [
+        [KeyboardButton(text="Коллаж для блондинок")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_delete_confirmation():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Да, удалить")],
+            [KeyboardButton(text="❌ Нет, отмена")]
+        ],
+        resize_keyboard=True
+    )
