@@ -55,6 +55,9 @@ PHOTO_KEYS = {
     "colored_general_copper": "Коллаж: Окрашенные (рыжая)",
     "natural_general": "Коллаж: Натуральные волосы",
     "volume_care": "Коллаж: Объем",
+    "sensitive_scalp": "Коллаж: Чувствительная кожа головы",
+    "hair_loss": "Коллаж: Выпадение волос",
+    "dandruff": "Коллаж: Перхоть/зуд",
 }
 
 class PhotoStorage:
