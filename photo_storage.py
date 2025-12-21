@@ -1,12 +1,11 @@
-# photo_storage.py - Хранилище ID фото из Telegram
-
+# photo_storage.py - Хранилище ID фото из Telegram (39 фото)
 import json
 import os
 from typing import Dict, List, Optional
 
 STORAGE_FILE = "photo_storage.json"
 
-# Базовые соответствия продуктов и их ключей в хранилище
+# 39 ключей для фото продуктов
 PHOTO_KEYS = {
     # ========== ТЕЛО ==========
     "body_milk": "Молочко для тела",
