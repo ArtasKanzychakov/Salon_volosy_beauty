@@ -97,4 +97,48 @@ def get_blonde_photos_menu():
 def get_colored_photos_menu():
     """Фото для окрашенных волос"""
     buttons = [
-        [KeyboardButton(text="Шампунь для окра
+        [KeyboardButton(text="Шампунь для окрашенных волос")],
+        [KeyboardButton(text="Кондиционер для окрашенных волос")],
+        [KeyboardButton(text="Маска для окрашенных волос")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_tone_masks_menu():
+    """Оттеночные маски"""
+    buttons = [
+        [KeyboardButton(text="Оттеночная маска Холодный шоколад")],
+        [KeyboardButton(text="Оттеночная маска Медный")],
+        [KeyboardButton(text="Оттеночная маска Розовая пудра")],
+        [KeyboardButton(text="Оттеночная маска Перламутр")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_collage_menu():
+    """Коллажи"""
+    buttons = [
+        [KeyboardButton(text="Коллаж для блондинок")],
+        [KeyboardButton(text="Коллаж: Ломкость волос")],
+        [KeyboardButton(text="Коллаж: Тусклость")],
+        [KeyboardButton(text="Коллаж: Пушистость")],
+        [KeyboardButton(text="Коллаж: Тонкие волосы")],
+        [KeyboardButton(text="Коллаж: Поврежденные волосы")],
+        [KeyboardButton(text="Коллаж: Окрашенные (шатен/русая)")],
+        [KeyboardButton(text="Коллаж: Окрашенные (рыжая)")],
+        [KeyboardButton(text="Коллаж: Натуральные волосы")],
+        [KeyboardButton(text="Коллаж: Объем")],
+        [KeyboardButton(text="🔙 К категориям")]
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+def get_delete_confirmation():
+    """Подтверждение удаления"""
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Да, удалить")],
+            [KeyboardButton(text="❌ Нет, отмена")]
+        ],
+        resize_keyboard=True
+    )
+    return kb
