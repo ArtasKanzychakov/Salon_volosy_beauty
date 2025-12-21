@@ -8,7 +8,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -72,7 +72,7 @@ def run_http_server():
     server.serve_forever()
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
-def format_response(data, selected_problems=None):
+def format_response(data):
     """Форматирует ответ с продуктами"""
     response = f"{data['title']}\n\n"
     for product in data["products"]:
@@ -96,7 +96,8 @@ async def send_photo_if_exists(message: Message, photo_key: str, caption: str):
 # ========== ОБРАБОТЧИКИ КОМАНД ==========
 
 # Старт
-@router.message(CommandStart())
+@router.message(F.text == "/start")
+@router.message(F.text == "🔄 Новый подбор")
 async def cmd_start(message: Message, state: FSMContext):
     clear_user_data(message.from_user.id)
     clear_selected_problems(message.from_user.id)
@@ -144,15 +145,13 @@ async def hair_handler(message: Message, state: FSMContext):
     await state.set_state(UserState.HAIR_TYPE)
     await message.answer("Выберите тип ваших волос:", reply_markup=get_hair_type_menu())
 
-# Финальные кнопки
-@router.message(F.text.in_(["📍 Точки", "🚚 Доставка", "🔄 Новый подбор"]))
+# Финальные кнопки (работают из любого состояния)
+@router.message(F.text.in_(["📍 Точки", "🚚 Доставка"]))
 async def final_buttons_handler(message: Message, state: FSMContext):
     if message.text == "📍 Точки":
         await message.answer(LOCATIONS_TEXT, reply_markup=get_final_menu())
     elif message.text == "🚚 Доставка":
         await message.answer(DELIVERY_TEXT, reply_markup=get_final_menu())
-    elif message.text == "🔄 Новый подбор":
-        await cmd_start(message, state)
 
 # ========== ОБРАБОТКА ТЕЛА ==========
 @router.message(UserState.BODY_MENU, F.text.in_(BODY_DATA))
@@ -167,7 +166,8 @@ async def body_recommendation_handler(message: Message, state: FSMContext):
     photo_key = data.get("photo_key")
     await send_photo_if_exists(message, photo_key, response)
     
-    await state.set_state(UserState.MAIN_MENU)
+    # ОСТАЁМСЯ в меню тела, показываем меню снова
+    await message.answer("Выберите другой тип ухода за телом:", reply_markup=get_body_menu())
 
 # ========== ОБРАБОТКА ВОЛОС ==========
 
@@ -230,7 +230,8 @@ async def hair_category_handler(message: Message, state: FSMContext):
         
         # Отправляем с фото
         await send_photo_if_exists(message, photo_key, response)
-        await state.set_state(UserState.MAIN_MENU)
+        # ОСТАЁМСЯ в меню ухода, показываем его снова
+        await message.answer("Выберите другую категорию ухода:", reply_markup=get_hair_care_menu())
     
     elif message.text == "⚡ Специфические проблемы":
         await state.set_state(UserState.HAIR_PROBLEMS)
@@ -243,7 +244,8 @@ async def hair_category_handler(message: Message, state: FSMContext):
         
         photo_key = data.get("photo_key")
         await send_photo_if_exists(message, photo_key, response)
-        await state.set_state(UserState.MAIN_MENU)
+        # ОСТАЁМСЯ в меню ухода, показываем его снова
+        await message.answer("Выберите другую категорию ухода:", reply_markup=get_hair_care_menu())
     
     elif message.text == "💨 Объем":
         data = HAIR_DATA[hair_type]["volume"]
@@ -252,7 +254,8 @@ async def hair_category_handler(message: Message, state: FSMContext):
         
         photo_key = data.get("photo_key")
         await send_photo_if_exists(message, photo_key, response)
-        await state.set_state(UserState.MAIN_MENU)
+        # ОСТАЁМСЯ в меню ухода, показываем его снова
+        await message.answer("Выберите другую категорию ухода:", reply_markup=get_hair_care_menu())
 
 # Выбор конкретной проблемы
 @router.message(UserState.HAIR_PROBLEMS, F.text.in_([
@@ -271,7 +274,9 @@ async def hair_problem_handler(message: Message, state: FSMContext):
         
         photo_key = data.get("photo_key")
         await send_photo_if_exists(message, photo_key, response)
-        await state.set_state(UserState.MAIN_MENU)
+        # ВОЗВРАЩАЕМСЯ в меню ухода, показываем его
+        await state.set_state(UserState.HAIR_CARE)
+        await message.answer("Выберите категорию ухода:", reply_markup=get_hair_care_menu())
 
 # ========== АДМИН-ПАНЕЛЬ ==========
 
@@ -282,38 +287,52 @@ SIMPLIFIED_NAMES = {
     "Молочко для тела": "body_milk",
     "Гидрофильное масло": "hydrophilic_oil",
     "Крем суфле": "cream_body",
-    "Скраб для тела": "body_scrub",
-    "Гель для душа": "shower_gel",
+    "Скраб кофе/кокос": "body_scrub",
+    "Гель для душа вишня/манго/лимон": "shower_gel",
     "Баттер для тела": "body_butter",
-    "Гиалуроновая кислота": "hyaluronic_acid",
+    "Гиалуроновая кислота для лица": "hyaluronic_acid",
     
     # 💇 ВОЛОСЫ - ОБЩИЕ
     "Биолипидный спрей": "biolipid_spray",
     "Сухое масло спрей": "dry_oil_spray",
-    "Масло ELIXIR": "oil_elixir",
+    "масло ELIXIR": "oil_elixir",
     "Молочко для волос": "hair_milk",
-    "Масло концентрат": "oil_concentrate",
+    "масло концентрат": "oil_concentrate",
     "Флюид для волос": "hair_fluid",
     "Шампунь реконстракт": "reconstruct_shampoo",
     "Маска реконстракт": "reconstruct_mask",
     "Протеиновый крем": "protein_cream",
     
     # 👱‍♀️ БЛОНДИНКИ
-    "Шампунь для осветленных волос": "blonde_shampoo",
-    "Кондиционер для осветленных волос": "blonde_conditioner",
-    "Маска для осветленных волос": "blonde_mask",
+    "Шампунь для осветленных волос с гиалуроновой кислотой": "blonde_shampoo",
+    "Кондиционер для осветленных волос с гиалуроновой кислотой": "blonde_conditioner",
+    "Маска для осветленных волос с гиалуроновой кислотой": "blonde_mask",
     
     # 🎨 ОКРАШЕННЫЕ
-    "Шампунь для окрашенных волос": "colored_shampoo",
-    "Кондиционер для окрашенных волос": "colored_conditioner",
-    "Маска для окрашенных волос": "colored_mask",
+    "Шампунь для окрашенных волос с коллагеном": "colored_shampoo",
+    "Кондиционер для окрашенных волос с коллагеном": "colored_conditioner",
+    "Маска для окрашенных волос с коллагеном": "colored_mask",
     
     # 🎨 ОТТЕНОЧНЫЕ МАСКИ
     "Оттеночная маска Холодный шоколад": "mask_cold_chocolate",
     "Оттеночная маска Медный": "mask_copper",
+    "Оттеночная маска Розовая пудра": "mask_pink_powder",
+    "Оттеночная маска Перламутр": "mask_mother_of_pearl",
     
-    # 🖼 КОЛЛАЖ
-    "Коллаж для блондинок": "collage_blonde"
+    # 🖼 КОЛЛАЖИ
+    "Коллаж для блондинок (общий уход)": "blonde_general",
+    "Коллаж: Ломкость волос": "blonde_lomkost",
+    "Коллаж: Тусклость": "hair_milk_concentrate",
+    "Коллаж: Пушистость": "fluid_protein_elixir",
+    "Коллаж: Тонкие волосы": "thin_hair_care",
+    "Коллаж: Поврежденные волосы": "damaged_hair",
+    "Коллаж: Окрашенные (шатен/русая)": "colored_general_chocolate",
+    "Коллаж: Окрашенные (рыжая)": "colored_general_copper",
+    "Коллаж: Натуральные волосы": "natural_general",
+    "Коллаж: Объем": "volume_care",
+    "Коллаж: Чувствительная кожа головы": "sensitive_scalp",
+    "Коллаж: Выпадение волос": "hair_loss",
+    "Коллаж: Перхоть/зуд": "dandruff",
 }
 
 @router.message(F.text == "admin2026")
@@ -381,7 +400,7 @@ async def admin_status(message: Message):
 # Обработка выбора категорий фото
 @router.message(AdminState.UPLOAD, F.text.in_([
     "🧴 Тело", "💇 Волосы - общие", "👱‍♀️ Блондинки",
-    "🎨 Окрашенные", "🎨 Оттеночные маски", "🖼 Коллаж"
+    "🎨 Окрашенные", "🎨 Оттеночные маски", "🖼 Коллажи"
 ]))
 async def admin_category_handler(message: Message):
     if message.text == "🧴 Тело":
@@ -394,7 +413,7 @@ async def admin_category_handler(message: Message):
         await message.answer("Выберите продукт для окрашенных волос:", reply_markup=get_colored_photos_menu())
     elif message.text == "🎨 Оттеночные маски":
         await message.answer("Выберите оттеночную маску:", reply_markup=get_tone_masks_menu())
-    elif message.text == "🖼 Коллаж":
+    elif message.text == "🖼 Коллажи":
         await message.answer("Выберите коллаж:", reply_markup=get_collage_menu())
 
 @router.message(AdminState.UPLOAD, F.text.in_(SIMPLIFIED_NAMES.keys()))
