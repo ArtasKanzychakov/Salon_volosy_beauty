@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import signal
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -213,7 +214,7 @@ async def body_choice_handler(message: Message, state: FSMContext):
     full_message = f"{recommendation}\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
     
     # Определяем ключ фото для коллажа тела
-    photo_key = "collage_body"  # Нужно будет добавить в photo_storage.py
+    photo_key = "collage_body"
     
     # Отправляем с фото или без
     await send_photo_if_exists(message, photo_key, full_message)
@@ -369,7 +370,7 @@ async def show_hair_recommendation(message: Message, state: FSMContext, user_id)
     await message.answer(FINAL_MESSAGE, reply_markup=get_final_menu())
     await state.set_state(UserState.FINAL)
 
-# ========== АДМИН-ПАНЕЛЬ (сохранена из предыдущей версии) ==========
+# ========== АДМИН-ПАНЕЛЬ ==========
 
 # Словари для преобразования названий в ключи
 NAME_TO_KEY = {v: k for k, v in PHOTO_KEYS.items()}
@@ -645,7 +646,10 @@ async def admin_delete_back(message: Message, state: FSMContext):
 
 # ========== ЗАПУСК БОТА ==========
 async def run_bot():
+    """Основная функция запуска бота"""
     logger.info("🚀 Запуск Telegram бота с новой логикой...")
+    
+    # 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: удаляем старый вебхук перед запуском
     await bot.delete_webhook(drop_pending_updates=True)
     
     print("=" * 50)
@@ -658,16 +662,27 @@ async def run_bot():
     
     await dp.start_polling(bot)
 
+def signal_handler(sig, frame):
+    """Обработчик сигналов для graceful shutdown"""
+    print('\n⚠️ Получен сигнал остановки. Завершаю работу бота...')
+    sys.exit(0)
+
 def main():
+    """Главная функция"""
+    # 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: настройка graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # Сигнал остановки от Render
+    
+    # Запускаем HTTP-сервер для Render (для бесплатного тарифа)
     http_thread = Thread(target=run_http_server, daemon=True)
     http_thread.start()
     
     try:
         asyncio.run(run_bot())
     except KeyboardInterrupt:
-        logger.info("Бот остановлен")
+        logger.info("Бот остановлен пользователем")
     except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
+        logger.error(f"Критическая ошибка: {e}", exc_info=True)
         return 1
     
     return 0
