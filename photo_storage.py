@@ -1,27 +1,28 @@
-# photo_storage.py - Хранилище ID фото из Telegram (39 фото)
+# photo_storage.py - Хранилище ID фото из Telegram
 import json
 import os
 from typing import Dict, List, Optional
 
 STORAGE_FILE = "photo_storage.json"
 
-# 39 ключей для фото продуктов
+# Базовые соответствия продуктов и их ключей в хранилище
 PHOTO_KEYS = {
     # ========== ТЕЛО ==========
     "body_milk": "Молочко для тела",
     "hydrophilic_oil": "Гидрофильное масло",
-    "cream_body": "Крем суфле",
+    "cream_body": "Крем-суфле",
     "body_scrub": "Скраб кофе/кокос",
-    "shower_gel": "Гель для душа вишня/манго/лимон",
+    "shower_gel": "Гель для душа (вишня/манго/лимон)",
     "body_butter": "Баттер для тела",
     "hyaluronic_acid": "Гиалуроновая кислота для лица",
+    "anticellulite_scrub": "Антицеллюлитный скраб (мята)",
     
     # ========== ВОЛОСЫ - ОБЩИЕ ==========
     "biolipid_spray": "Биолипидный спрей",
     "dry_oil_spray": "Сухое масло спрей",
-    "oil_elixir": "масло ELIXIR",
+    "oil_elixir": "Масло ELIXIR",
     "hair_milk": "Молочко для волос",
-    "oil_concentrate": "масло концентрат",
+    "oil_concentrate": "Масло-концентрат",
     "hair_fluid": "Флюид для волос",
     "reconstruct_shampoo": "Шампунь реконстракт",
     "reconstruct_mask": "Маска реконстракт",
@@ -40,23 +41,20 @@ PHOTO_KEYS = {
     # ========== ОТТЕНОЧНЫЕ МАСКИ ==========
     "mask_cold_chocolate": "Оттеночная маска Холодный шоколад",
     "mask_copper": "Оттеночная маска Медный",
-    "mask_pink_powder": "Оттеночная маска Розовая пудра",
-    "mask_mother_of_pearl": "Оттеночная маска Перламутр",
     
     # ========== КОЛЛАЖИ ==========
-    "blonde_general": "Коллаж для блондинок (общий уход)",
-    "blonde_lomkost": "Коллаж: Ломкость волос",
-    "hair_milk_concentrate": "Коллаж: Тусклость",
-    "fluid_protein_elixir": "Коллаж: Пушистость",
-    "thin_hair_care": "Коллаж: Тонкие волосы",
-    "damaged_hair": "Коллаж: Поврежденные волосы",
-    "colored_general_chocolate": "Коллаж: Окрашенные (шатен/русая)",
-    "colored_general_copper": "Коллаж: Окрашенные (рыжая)",
-    "natural_general": "Коллаж: Натуральные волосы",
-    "volume_care": "Коллаж: Объем",
-    "sensitive_scalp": "Коллаж: Чувствительная кожа головы",
-    "hair_loss": "Коллаж: Выпадение волос",
-    "dandruff": "Коллаж: Перхоть/зуд",
+    "collage_blonde": "Коллаж для блондинок",
+    "collage_colored": "Коллаж: Окрашенные волосы",
+    "collage_natural": "Коллаж: Натуральные волосы",
+    "collage_lomkost": "Коллаж: Ломкость волос",
+    "collage_tusk": "Коллаж: Тусклость",
+    "collage_fluffy": "Коллаж: Пушистость",
+    "collage_thin": "Коллаж: Тонкие волосы",
+    "collage_damaged": "Коллаж: Поврежденные волосы",
+    "collage_volume": "Коллаж: Объем",
+    "collage_scalp": "Коллаж: Чувствительная кожа головы",
+    "collage_loss": "Коллаж: Выпадение волос",
+    "collage_dandruff": "Коллаж: Перхоть/зуд"
 }
 
 class PhotoStorage:
