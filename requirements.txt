@@ -1,4 +1,5 @@
 aiogram==3.23.0
-python-dotenv>=1.0.0
+python-dotenv==1.2.1
 pip>=25.3
-sqlalchemy>=2.0.0
+aiofiles==25.1.0
+sqlalchemy>=2.0.0  # ДОБАВЬТЕ ЭТУ СТРОЧКУ
