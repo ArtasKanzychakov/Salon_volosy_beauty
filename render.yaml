@@ -8,5 +8,8 @@ services:
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
-        sync: false
+        sync: false  # Токен бота (установите в настройках Render)
+      - key: DATABASE_URL
+        value: "sqlite:///bot_data.db"  # База данных для фото
     autoDeploy: true
+    healthCheckPath: /health
