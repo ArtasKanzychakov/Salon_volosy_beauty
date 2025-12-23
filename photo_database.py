@@ -1,10 +1,10 @@
-# photo_database.py - ВСЁ В ОДНОМ ФАЙЛЕ
+# photo_database.py - Хранилище фото в базе данных
 import os
 from sqlalchemy import create_engine, Column, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# ========== PHOTO_KEYS ПРЯМО ЗДЕСЬ ==========
+# ========== ВСЕ КЛЮЧИ ФОТО ЗДЕСЬ ==========
 PHOTO_KEYS = {
     # ========== ТЕЛО ==========
     "body_milk": "Молочко для тела",
@@ -69,9 +69,10 @@ Base = declarative_base()
 # ========== МОДЕЛЬ ДЛЯ ХРАНЕНИЯ ФОТО ==========
 class StoredPhoto(Base):
     __tablename__ = "stored_photos"
-    photo_key = Column(String, primary_key=True)
-    file_id = Column(String)
-    display_name = Column(String)
+    
+    photo_key = Column(String, primary_key=True)      # Ключ, например "body_milk"
+    file_id = Column(String)                          # Telegram file_id
+    display_name = Column(String)                     # Человеческое название
 
 Base.metadata.create_all(engine)
 
@@ -82,6 +83,7 @@ class DatabasePhotoStorage:
         self._init_database()
     
     def _init_database(self):
+        """Заполняем базу всеми возможными ключами при первом запуске"""
         for key, name in PHOTO_KEYS.items():
             existing = self.session.get(StoredPhoto, key)
             if not existing:
@@ -95,6 +97,7 @@ class DatabasePhotoStorage:
         print(f"✅ База данных фото инициализирована: {len(PHOTO_KEYS)} записей")
     
     def save_photo_id(self, key: str, file_id: str):
+        """Сохраняем или обновляем file_id"""
         photo = self.session.get(StoredPhoto, key)
         if photo:
             photo.file_id = file_id
@@ -103,12 +106,14 @@ class DatabasePhotoStorage:
         return False
     
     def get_photo_id(self, key: str):
+        """Получаем file_id по ключу"""
         photo = self.session.get(StoredPhoto, key)
         if photo and photo.file_id:
             return photo.file_id
         return None
     
     def delete_photo(self, key: str):
+        """Удаляем фото (очищаем file_id)"""
         photo = self.session.get(StoredPhoto, key)
         if photo:
             photo.file_id = None
@@ -117,6 +122,7 @@ class DatabasePhotoStorage:
         return False
     
     def get_all_photos(self):
+        """Получаем все загруженные фото"""
         result = {}
         photos = self.session.query(StoredPhoto).filter(
             StoredPhoto.file_id.isnot(None)
@@ -128,6 +134,7 @@ class DatabasePhotoStorage:
         return result
     
     def get_photo_status(self):
+        """Получаем статус загрузки всех фото"""
         status = {}
         photos = self.session.query(StoredPhoto).all()
         
@@ -135,6 +142,17 @@ class DatabasePhotoStorage:
             status[photo.display_name] = photo.file_id is not None
         
         return status
+    
+    def get_missing_photos(self):
+        """Получаем список фото, которые еще не загружены"""
+        missing = []
+        photos = self.session.query(StoredPhoto).all()
+        
+        for photo in photos:
+            if not photo.file_id:
+                missing.append(photo.display_name)
+        
+        return missing
 
 # Глобальный экземпляр хранилища
 photo_storage = DatabasePhotoStorage()
