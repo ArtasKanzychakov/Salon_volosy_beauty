@@ -19,9 +19,8 @@ from keyboards import *
 from body_data import BODY_DATA
 from hair_data import HAIR_DATA
 from user_storage import *
-# Импортируем НОВУЮ базу данных для фото
-from photo_database import photo_storage
-from photo_storage import PHOTO_KEYS
+# Импортируем ВСЁ из нового photo_database.py
+from photo_database import photo_storage, PHOTO_KEYS
 from states import UserState, AdminState
 
 # ========== НАСТРОЙКА ЛОГГИРОВАНИЯ ==========
@@ -404,6 +403,7 @@ SIMPLIFIED_NAMES = {
     "Маска для окрашенных волос с коллагеном": "colored_mask",
     "Оттеночная маска Холодный шоколад": "mask_cold_chocolate",
     "Оттеночная маска Медный": "mask_copper",
+    "Коллаж для тела": "collage_body",
     "Коллаж для блондинок": "collage_blonde",
     "Коллаж: Окрашенные волосы": "collage_colored",
     "Коллаж: Натуральные волосы": "collage_natural",
@@ -652,7 +652,7 @@ async def run_bot():
     print("✅ Ветка: Тело (4 вопроса)")
     print("✅ Ветка: Волосы (5-6 шагов с мультивыбором)")
     print("✅ Админ-панель: admin2026")
-    print("✅ Фото хранятся в БАЗЕ ДАННЫХ")
+    print("✅ Фото хранятся в БАЗЕ ДАННЫХ (SQLite)")
     print("=" * 50)
 
     await dp.start_polling(bot)
