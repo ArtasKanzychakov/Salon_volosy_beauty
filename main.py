@@ -3,6 +3,8 @@ import logging
 import os
 import sys
 import signal
+import hashlib
+import socket
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -29,6 +31,16 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# ========== ГЕНЕРАЦИЯ УНИКАЛЬНОГО ID ДЛЯ ЭКЗЕМПЛЯРА ==========
+def get_instance_id():
+    """Генерируем уникальный ID для этого экземпляра бота"""
+    hostname = socket.gethostname()
+    pid = os.getpid()
+    unique_str = f"{hostname}_{pid}_{BOT_TOKEN[:10] if BOT_TOKEN else 'no_token'}"
+    return hashlib.md5(unique_str.encode()).hexdigest()[:8]
+
+INSTANCE_ID = get_instance_id()
 
 # ========== ИНИЦИАЛИЗАЦИЯ БОТА ==========
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -641,13 +653,20 @@ async def admin_delete_back(message: Message, state: FSMContext):
 # ========== ЗАПУСК БОТА ==========
 async def run_bot():
     """Основная функция запуска бота"""
-    logger.info("🚀 Запуск Telegram бота с новой логикой...")
+    logger.info(f"🚀 Запуск Telegram бота (экземпляр: {INSTANCE_ID})...")
 
-    # Удаляем старый вебхук перед запуском
-    await bot.delete_webhook(drop_pending_updates=True)
+    # 1. Останавливаем ВСЕ старые инстансы бота
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        logger.info("✅ Вебхук удален, старые инстансы остановлены")
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка при удалении вебхука: {e}")
+
+    # 2. Даем время на завершение старых процессов
+    await asyncio.sleep(5)
 
     print("=" * 50)
-    print("🤖 БОТ ЗАПУЩЕН С НОВОЙ ЛОГИКОЙ")
+    print(f"🤖 БОТ ЗАПУЩЕН (ID: {INSTANCE_ID})")
     print("✅ Диалоговый консультант по косметике")
     print("✅ Ветка: Тело (4 вопроса)")
     print("✅ Ветка: Волосы (5-6 шагов с мультивыбором)")
@@ -655,11 +674,19 @@ async def run_bot():
     print("✅ Фото хранятся в БАЗЕ ДАННЫХ (SQLite)")
     print("=" * 50)
 
-    await dp.start_polling(bot)
+    # 3. Запускаем polling с защитой от конфликтов
+    await dp.start_polling(
+        bot,
+        skip_updates=True,  # Пропускаем старые сообщения
+        allowed_updates=["message", "callback_query"],  # Только нужные апдейты
+        timeout=60,
+        relax=0.5,
+        close_bot_session=False
+    )
 
 def signal_handler(sig, frame):
     """Обработчик сигналов для graceful shutdown"""
-    print('\n⚠️ Получен сигнал остановки. Завершаю работу бота...')
+    print(f'\n⚠️ Получен сигнал остановки (экземпляр: {INSTANCE_ID}). Завершаю работу бота...')
     sys.exit(0)
 
 def main():
