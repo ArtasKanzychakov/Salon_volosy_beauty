@@ -1,20 +1,67 @@
-# photo_database.py - Хранилище фото в БАЗЕ ДАННЫХ
+# photo_database.py - ВСЁ В ОДНОМ ФАЙЛЕ
 import os
 from sqlalchemy import create_engine, Column, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Импортируем PHOTO_KEYS из вашего старого файла
-from photo_storage import PHOTO_KEYS
+# ========== PHOTO_KEYS ПРЯМО ЗДЕСЬ ==========
+PHOTO_KEYS = {
+    # ========== ТЕЛО ==========
+    "body_milk": "Молочко для тела",
+    "hydrophilic_oil": "Гидрофильное масло",
+    "cream_body": "Крем-суфле",
+    "body_scrub": "Скраб кофе/кокос",
+    "shower_gel": "Гель для душа (вишня/манго/лимон)",
+    "body_butter": "Баттер для тела",
+    "hyaluronic_acid": "Гиалуроновая кислота для лица",
+    "anticellulite_scrub": "Антицеллюлитный скраб (мята)",
+
+    # ========== ВОЛОСЫ - ОБЩИЕ ==========
+    "biolipid_spray": "Биолипидный спрей",
+    "dry_oil_spray": "Сухое масло спрей",
+    "oil_elixir": "Масло ELIXIR",
+    "hair_milk": "Молочко для волос",
+    "oil_concentrate": "Масло-концентрат",
+    "hair_fluid": "Флюид для волос",
+    "reconstruct_shampoo": "Шампунь реконстракт",
+    "reconstruct_mask": "Маска реконстракт",
+    "protein_cream": "Протеиновый крем",
+
+    # ========== БЛОНДИНКИ ==========
+    "blonde_shampoo": "Шампунь для осветленных волос с гиалуроновой кислотой",
+    "blonde_conditioner": "Кондиционер для осветленных волос с гиалуроновой кислотой",
+    "blonde_mask": "Маска для осветленных волос с гиалуроновой кислотой",
+
+    # ========== ОКРАШЕННЫЕ ==========
+    "colored_shampoo": "Шампунь для окрашенных волос с коллагеном",
+    "colored_conditioner": "Кондиционер для окрашенных волос с коллагеном",
+    "colored_mask": "Маска для окрашенных волос с коллагеном",
+
+    # ========== ОТТЕНОЧНЫЕ МАСКИ ==========
+    "mask_cold_chocolate": "Оттеночная маска Холодный шоколад",
+    "mask_copper": "Оттеночная маска Медный",
+
+    # ========== КОЛЛАЖИ ==========
+    "collage_body": "Коллаж для тела",
+    "collage_blonde": "Коллаж для блондинок",
+    "collage_colored": "Коллаж: Окрашенные волосы",
+    "collage_natural": "Коллаж: Натуральные волосы",
+    "collage_lomkost": "Коллаж: Ломкость волос",
+    "collage_tusk": "Коллаж: Тусклость",
+    "collage_fluffy": "Коллаж: Пушистость",
+    "collage_thin": "Коллаж: Тонкие волосы",
+    "collage_damaged": "Коллаж: Поврежденные волосы",
+    "collage_volume": "Коллаж: Объем",
+    "collage_scalp": "Коллаж: Чувствительная кожа головы",
+    "collage_loss": "Коллаж: Выпадение волос",
+    "collage_dandruff": "Коллаж: Перхоть/зуд"
+}
 
 # ========== НАСТРОЙКА БАЗЫ ДАННЫХ ==========
-# На Render используем SQLite, но сохраняем возможность для PostgreSQL
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
-    # Для локальной разработки
     DATABASE_URL = "sqlite:///bot_data.db"
 
-# Создаем движок базы данных
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -22,33 +69,22 @@ Base = declarative_base()
 # ========== МОДЕЛЬ ДЛЯ ХРАНЕНИЯ ФОТО ==========
 class StoredPhoto(Base):
     __tablename__ = "stored_photos"
-    
-    # Ключ фото (например: "body_milk", "collage_blonde")
     photo_key = Column(String, primary_key=True)
-    
-    # Telegram file_id (уникальный идентификатор фото в Telegram)
     file_id = Column(String)
-    
-    # Человекочитаемое название (например: "Молочко для тела")
     display_name = Column(String)
 
-# Создаем таблицу в базе данных
 Base.metadata.create_all(engine)
 
 # ========== КЛАСС ДЛЯ РАБОТЫ С БАЗОЙ ДАННЫХ ==========
 class DatabasePhotoStorage:
     def __init__(self):
-        """Инициализация хранилища с базой данных"""
         self.session = SessionLocal()
         self._init_database()
     
     def _init_database(self):
-        """Заполняем базу данных всеми возможными ключами при первом запуске"""
         for key, name in PHOTO_KEYS.items():
-            # Проверяем, есть ли уже запись с таким ключом
             existing = self.session.get(StoredPhoto, key)
             if not existing:
-                # Создаем новую запись без file_id
                 new_photo = StoredPhoto(
                     photo_key=key,
                     file_id=None,
@@ -59,36 +95,28 @@ class DatabasePhotoStorage:
         print(f"✅ База данных фото инициализирована: {len(PHOTO_KEYS)} записей")
     
     def save_photo_id(self, key: str, file_id: str):
-        """Сохраняем или обновляем file_id для указанного ключа"""
         photo = self.session.get(StoredPhoto, key)
         if photo:
             photo.file_id = file_id
             self.session.commit()
-            print(f"💾 Фото сохранено в БД: {key} -> {file_id[:20]}...")
             return True
-        else:
-            print(f"❌ Ключ не найден в БД: {key}")
-            return False
+        return False
     
     def get_photo_id(self, key: str):
-        """Получаем file_id по ключу"""
         photo = self.session.get(StoredPhoto, key)
         if photo and photo.file_id:
             return photo.file_id
         return None
     
     def delete_photo(self, key: str):
-        """Удаляем фото (очищаем file_id)"""
         photo = self.session.get(StoredPhoto, key)
         if photo:
             photo.file_id = None
             self.session.commit()
-            print(f"🗑 Фото удалено из БД: {key}")
             return True
         return False
     
     def get_all_photos(self):
-        """Получаем все загруженные фото"""
         result = {}
         photos = self.session.query(StoredPhoto).filter(
             StoredPhoto.file_id.isnot(None)
@@ -100,7 +128,6 @@ class DatabasePhotoStorage:
         return result
     
     def get_photo_status(self):
-        """Получаем статус загрузки всех фото"""
         status = {}
         photos = self.session.query(StoredPhoto).all()
         
@@ -108,17 +135,6 @@ class DatabasePhotoStorage:
             status[photo.display_name] = photo.file_id is not None
         
         return status
-    
-    def get_missing_photos(self):
-        """Получаем список фото, которые еще не загружены"""
-        missing = []
-        photos = self.session.query(StoredPhoto).all()
-        
-        for photo in photos:
-            if not photo.file_id:
-                missing.append(photo.display_name)
-        
-        return missing
 
 # Глобальный экземпляр хранилища
 photo_storage = DatabasePhotoStorage()
