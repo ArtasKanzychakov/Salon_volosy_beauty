@@ -19,7 +19,9 @@ from keyboards import *
 from body_data import BODY_DATA
 from hair_data import HAIR_DATA
 from user_storage import *
-from photo_storage import photo_storage, PHOTO_KEYS
+# Импортируем НОВУЮ базу данных для фото
+from photo_database import photo_storage
+from photo_storage import PHOTO_KEYS
 from states import UserState, AdminState
 
 # ========== НАСТРОЙКА ЛОГГИРОВАНИЯ ==========
@@ -46,7 +48,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
-    
+
     def log_message(self, format, *args):
         pass
 
@@ -59,11 +61,21 @@ def run_http_server():
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 async def send_photo_if_exists(message: Message, photo_key: str, caption: str):
     """Отправить фото, если оно есть в хранилище"""
-    if photo_key:
-        photo_id = photo_storage.get_photo_id(photo_key)
-        if photo_id:
-            await message.answer_photo(photo_id, caption=caption, parse_mode="HTML")
-            return True
+    try:
+        if photo_key:
+            photo_id = photo_storage.get_photo_id(photo_key)
+            if photo_id:
+                # Добавляем таймаут 10 секунд
+                await asyncio.wait_for(
+                    message.answer_photo(photo_id, caption=caption, parse_mode="HTML"),
+                    timeout=10.0
+                )
+                return True
+    except asyncio.TimeoutError:
+        await message.answer("⏰ Фото загружается...")
+        logger.warning(f"Таймаут при отправке фото: {photo_key}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки фото {photo_key}: {e}")
     
     await message.answer(caption, parse_mode="HTML")
     return False
@@ -71,12 +83,12 @@ async def send_photo_if_exists(message: Message, photo_key: str, caption: str):
 def format_body_recommendation(choice):
     """Форматировать рекомендацию для тела"""
     data = BODY_DATA[choice]
-    
+
     response = f"{data['title']}\n\n"
     for product in data["products"]:
         response += f"• {product}\n"
     response += f"\n<b>{data['note']}</b>\n"
-    
+
     return response
 
 def format_hair_recommendation(user_id):
@@ -87,16 +99,16 @@ def format_hair_recommendation(user_id):
     sensitive_scalp = user_data.get("sensitive_scalp", False)
     need_volume = user_data.get("need_volume", False)
     hair_color = user_data.get("hair_color")
-    
+
     response = "✨ <b>Отлично! Ваш персонализированный набор:</b>\n\n"
-    
+
     if hair_type in ["blonde", "colored", "natural"]:
         base_care = HAIR_DATA["base_care"][hair_type]
         response += f"{base_care['title']}\n"
         for product in base_care["products"]:
             response += f"• {product}\n"
         response += "\n"
-    
+
     if problems and "Общий уход" not in problems:
         for problem in problems:
             if problem in HAIR_DATA["problems"]:
@@ -105,26 +117,26 @@ def format_hair_recommendation(user_id):
                 for product in problem_data["products"]:
                     response += f"• {product}\n"
                 response += "\n"
-    
+
     if sensitive_scalp:
         scalp_data = HAIR_DATA["scalp"]
         response += f"{scalp_data['title']}\n"
         for product in scalp_data["products"]:
             response += f"• {product}\n"
         response += "\n"
-    
+
     if need_volume:
         volume_data = HAIR_DATA["volume"]
         response += f"{volume_data['title']}\n"
         for product in volume_data["products"]:
             response += f"• {product}\n"
         response += "\n"
-    
+
     if hair_type == "colored" and hair_color and hair_color in HAIR_DATA["color_masks"]:
         color_mask = HAIR_DATA["color_masks"][hair_color]
         response += f"🎨 <b>Для вашего цвета волос ({hair_color.lower()}):</b>\n"
         response += f"• {color_mask}\n\n"
-    
+
     return response.strip()
 
 # ========== ОБРАБОТЧИКИ КОМАНД ==========
@@ -145,19 +157,19 @@ async def back_handler(message: Message, state: FSMContext):
     """Обработка кнопки Назад"""
     current_state = await state.get_state()
     user_id = message.from_user.id
-    
+
     if current_state == UserState.BODY_CHOICE:
         await state.set_state(UserState.MAIN_MENU)
         await message.answer(WELCOME_TEXT, reply_markup=get_main_menu())
-    
+
     elif current_state == UserState.HAIR_TYPE:
         await state.set_state(UserState.MAIN_MENU)
         await message.answer(WELCOME_TEXT, reply_markup=get_main_menu())
-    
+
     elif current_state == UserState.HAIR_PROBLEMS:
         await state.set_state(UserState.HAIR_TYPE)
         await message.answer("❓ <b>Ваши волосы окрашены?</b>", reply_markup=get_hair_type_menu())
-    
+
     elif current_state == UserState.HAIR_SCALP:
         await state.set_state(UserState.HAIR_PROBLEMS)
         problems = get_selected_problems(user_id)
@@ -165,15 +177,15 @@ async def back_handler(message: Message, state: FSMContext):
             "❓ <b>С какими проблемами волос вы сталкиваетесь?</b>\n(можно выбрать несколько)",
             reply_markup=get_hair_problems_menu(problems)
         )
-    
+
     elif current_state == UserState.HAIR_VOLUME:
         await state.set_state(UserState.HAIR_SCALP)
         await message.answer("❓ <b>Есть ли у вас чувствительная кожа головы?</b>", reply_markup=get_yes_no_menu())
-    
+
     elif current_state == UserState.HAIR_COLOR:
         await state.set_state(UserState.HAIR_VOLUME)
         await message.answer("❓ <b>Вам нужен дополнительный акцент на объем?</b>", reply_markup=get_yes_no_menu())
-    
+
     else:
         await cmd_start(message, state)
 
@@ -182,7 +194,7 @@ async def back_handler(message: Message, state: FSMContext):
 async def body_handler(message: Message, state: FSMContext):
     """Выбрана категория Тело"""
     current_state = await state.get_state()
-    
+
     # Разрешаем доступ из любых состояний, кроме админских
     if current_state not in [AdminState.MAIN, AdminState.UPLOAD, AdminState.WAITING_PHOTO,
                             AdminState.DELETE_SELECT, AdminState.DELETE_CONFIRM]:
@@ -196,7 +208,7 @@ async def body_handler(message: Message, state: FSMContext):
 async def hair_handler(message: Message, state: FSMContext):
     """Выбрана категория Волосы"""
     current_state = await state.get_state()
-    
+
     # Разрешаем доступ из любых состояний, кроме админских
     if current_state not in [AdminState.MAIN, AdminState.UPLOAD, AdminState.WAITING_PHOTO,
                             AdminState.DELETE_SELECT, AdminState.DELETE_CONFIRM]:
@@ -220,13 +232,13 @@ async def body_choice_handler(message: Message, state: FSMContext):
     """Пользователь выбрал задачу для тела"""
     user_id = message.from_user.id
     choice = message.text
-    
+
     recommendation = format_body_recommendation(choice)
     full_message = f"{recommendation}\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
-    
+
     photo_key = "collage_body"
     await send_photo_if_exists(message, photo_key, full_message)
-    
+
     await message.answer(FINAL_MESSAGE, reply_markup=get_final_menu())
     await state.set_state(UserState.FINAL)
 
@@ -239,16 +251,16 @@ async def body_choice_handler(message: Message, state: FSMContext):
 async def hair_type_handler(message: Message, state: FSMContext):
     """Пользователь выбрал тип волос"""
     user_id = message.from_user.id
-    
+
     if message.text == "Да, я блондинка":
         save_user_data(user_id, "hair_type", "blonde")
     elif message.text == "Да, у меня другой цвет (шатенка, русая, рыжая)":
         save_user_data(user_id, "hair_type", "colored")
     elif message.text == "Нет, волосы натуральные":
         save_user_data(user_id, "hair_type", "natural")
-    
+
     clear_selected_problems(user_id)
-    
+
     await state.set_state(UserState.HAIR_PROBLEMS)
     await message.answer(
         "❓ <b>С какими проблемами волос вы сталкиваетесь?</b>\n(можно выбрать несколько)",
@@ -265,16 +277,16 @@ async def hair_problems_handler(message: Message, state: FSMContext):
     """Пользователь выбирает/убирает проблемы"""
     user_id = message.from_user.id
     problem = message.text
-    
+
     current_problems = get_selected_problems(user_id)
-    
+
     if problem in current_problems:
         remove_selected_problem(user_id, problem)
     else:
         add_selected_problem(user_id, problem)
-    
+
     updated_problems = get_selected_problems(user_id)
-    
+
     await message.answer(
         f"✅ <b>Вы выбрали:</b>\n" + "\n".join([f"• {p}" for p in updated_problems]),
         reply_markup=get_hair_problems_menu(updated_problems)
@@ -285,10 +297,10 @@ async def hair_problems_continue(message: Message, state: FSMContext):
     """Пользователь закончил выбор проблем"""
     user_id = message.from_user.id
     problems = get_selected_problems(user_id)
-    
+
     if not problems:
         add_selected_problem(user_id, "Общий уход")
-    
+
     await state.set_state(UserState.HAIR_SCALP)
     await message.answer(
         "❓ <b>Есть ли у вас чувствительная кожа головы?</b>",
@@ -300,12 +312,12 @@ async def hair_problems_continue(message: Message, state: FSMContext):
 async def hair_scalp_handler(message: Message, state: FSMContext):
     """Пользователь ответил про чувствительность кожи головы"""
     user_id = message.from_user.id
-    
+
     if message.text == "✅ Да":
         save_user_data(user_id, "sensitive_scalp", True)
     else:
         save_user_data(user_id, "sensitive_scalp", False)
-    
+
     await state.set_state(UserState.HAIR_VOLUME)
     await message.answer(
         "❓ <b>Вам нужен дополнительный акцент на объем?</b>",
@@ -317,14 +329,14 @@ async def hair_scalp_handler(message: Message, state: FSMContext):
 async def hair_volume_handler(message: Message, state: FSMContext):
     """Пользователь ответил про объем"""
     user_id = message.from_user.id
-    
+
     if message.text == "✅ Да":
         save_user_data(user_id, "need_volume", True)
     else:
         save_user_data(user_id, "need_volume", False)
-    
+
     hair_type = get_user_data(user_id, "hair_type")
-    
+
     if hair_type == "colored":
         await state.set_state(UserState.HAIR_COLOR)
         await message.answer(
@@ -342,14 +354,14 @@ async def hair_color_handler(message: Message, state: FSMContext):
     """Пользователь выбрал цвет волос"""
     user_id = message.from_user.id
     save_user_data(user_id, "hair_color", message.text)
-    
+
     await show_hair_recommendation(message, state, user_id)
 
 async def show_hair_recommendation(message: Message, state: FSMContext, user_id):
     """Показать итоговую рекомендацию для волос"""
     recommendation = format_hair_recommendation(user_id)
     full_message = f"{recommendation}\n\n{LOCATIONS_TEXT}\n\n{DELIVERY_TEXT}"
-    
+
     hair_type = get_user_data(user_id, "hair_type")
     if hair_type == "blonde":
         photo_key = "collage_blonde"
@@ -357,9 +369,9 @@ async def show_hair_recommendation(message: Message, state: FSMContext, user_id)
         photo_key = "collage_colored"
     else:
         photo_key = "collage_natural"
-    
+
     await send_photo_if_exists(message, photo_key, full_message)
-    
+
     await message.answer(FINAL_MESSAGE, reply_markup=get_final_menu())
     await state.set_state(UserState.FINAL)
 
@@ -419,7 +431,6 @@ async def admin_access(message: Message, state: FSMContext):
 async def admin_exit(message: Message, state: FSMContext):
     """Выход из админ-панели"""
     await state.clear()
-    # 🔥 КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: устанавливаем состояние главного меню
     await state.set_state(UserState.MAIN_MENU)
     await message.answer(
         "👋 Вы вышли из админ-панели.\nВозвращаюсь в главное меню.",
@@ -457,17 +468,17 @@ async def admin_status(message: Message):
     total = len(status)
     uploaded = sum(1 for v in status.values() if v)
     missing = total - uploaded
-    
+
     response = f"📊 <b>Статус загрузки фото:</b>\n\n"
     response += f"✅ Загружено: {uploaded}/{total}\n"
     response += f"❌ Отсутствует: {missing}\n\n"
-    
+
     if missing > 0:
         response += "<b>Отсутствующие фото:</b>\n"
         for name, has_photo in status.items():
             if not has_photo:
                 response += f"• {name}\n"
-    
+
     await message.answer(response)
 
 # Обработка выбора категорий фото
@@ -494,10 +505,10 @@ async def admin_select_product(message: Message, state: FSMContext):
     """Выбор конкретного продукта для загрузки"""
     product_name = message.text
     key = SIMPLIFIED_NAMES[product_name]
-    
+
     await state.update_data(selected_key=key, selected_name=product_name)
     await state.set_state(AdminState.WAITING_PHOTO)
-    
+
     existing_photo = photo_storage.get_photo_id(key)
     if existing_photo:
         await message.answer(f"📸 <b>{product_name}</b>\nФото уже загружено.\nОтправьте новое фото чтобы заменить существующее:")
@@ -510,26 +521,26 @@ async def admin_receive_photo(message: Message, state: FSMContext):
     data = await state.get_data()
     key = data.get("selected_key")
     product_name = data.get("selected_name")
-    
+
     if not key:
         await message.answer("Ошибка: не выбран продукт")
         await state.set_state(AdminState.UPLOAD)
         await message.answer("Выберите категорию:", reply_markup=get_photo_categories_menu())
         return
-    
+
     photo = message.photo[-1]
     file_id = photo.file_id
-    
+
     photo_storage.save_photo_id(key, file_id)
-    
+
     await message.answer(
         f"✅ <b>Фото успешно загружено!</b>\n"
         f"Продукт: {product_name}\n"
-        f"ID фото сохранен в базе.\n\n"
+        f"ID фото сохранен в БАЗЕ ДАННЫХ.\n\n"
         f"Продолжайте загрузку или проверьте статус.",
         reply_markup=get_photo_categories_menu()
     )
-    
+
     await state.set_state(AdminState.UPLOAD)
 
 @router.message(AdminState.WAITING_PHOTO)
@@ -554,13 +565,13 @@ async def admin_delete_select(message: Message):
     if not all_photos:
         await message.answer("❌ Нет загруженных фото для удаления.")
         return
-    
+
     response = "📋 <b>Загруженные фото:</b>\n\n"
     for key, file_id in all_photos.items():
         if key in PHOTO_KEYS:
             product_name = PHOTO_KEYS[key]
             response += f"• {product_name}\n"
-    
+
     response += "\nВведите точное название продукта для удаления:"
     await message.answer(response)
 
@@ -568,14 +579,14 @@ async def admin_delete_select(message: Message):
 async def admin_confirm_delete(message: Message, state: FSMContext):
     product_name = message.text
     key = NAME_TO_KEY.get(product_name)
-    
+
     if not key:
         await message.answer("❌ Продукт не найден в базе.")
         return
-    
+
     await state.update_data(delete_key=key, delete_name=product_name)
     await state.set_state(AdminState.DELETE_CONFIRM)
-    
+
     await message.answer(
         f"⚠️ <b>Подтверждение удаления</b>\n\n"
         f"Вы действительно хотите удалить фото для:\n"
@@ -589,7 +600,7 @@ async def admin_execute_delete(message: Message, state: FSMContext):
     data = await state.get_data()
     key = data.get("delete_key")
     product_name = data.get("delete_name")
-    
+
     if key and photo_storage.delete_photo(key):
         await message.answer(
             f"🗑 <b>Фото удалено!</b>\n"
@@ -605,7 +616,7 @@ async def admin_execute_delete(message: Message, state: FSMContext):
         )
     else:
         await message.answer("❌ Не удалось удалить фото. Возможно, оно уже было удалено.")
-    
+
     await state.set_state(AdminState.DELETE_SELECT)
 
 @router.message(AdminState.DELETE_CONFIRM, F.text == "❌ Нет, отмена")
@@ -631,18 +642,19 @@ async def admin_delete_back(message: Message, state: FSMContext):
 async def run_bot():
     """Основная функция запуска бота"""
     logger.info("🚀 Запуск Telegram бота с новой логикой...")
-    
+
     # Удаляем старый вебхук перед запуском
     await bot.delete_webhook(drop_pending_updates=True)
-    
+
     print("=" * 50)
     print("🤖 БОТ ЗАПУЩЕН С НОВОЙ ЛОГИКОЙ")
     print("✅ Диалоговый консультант по косметике")
     print("✅ Ветка: Тело (4 вопроса)")
     print("✅ Ветка: Волосы (5-6 шагов с мультивыбором)")
     print("✅ Админ-панель: admin2026")
+    print("✅ Фото хранятся в БАЗЕ ДАННЫХ")
     print("=" * 50)
-    
+
     await dp.start_polling(bot)
 
 def signal_handler(sig, frame):
@@ -654,10 +666,10 @@ def main():
     """Главная функция"""
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     http_thread = Thread(target=run_http_server, daemon=True)
     http_thread.start()
-    
+
     try:
         asyncio.run(run_bot())
     except KeyboardInterrupt:
@@ -665,7 +677,7 @@ def main():
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}", exc_info=True)
         return 1
-    
+
     return 0
 
 if __name__ == "__main__":
