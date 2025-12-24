@@ -13,6 +13,3 @@ services:
         value: "sqlite:///bot_data.db"
     autoDeploy: true
     healthCheckPath: /health
-    scaling:
-      minInstances: 1
-      maxInstances: 1  # ТОЛЬКО ОДИН ЭКЗЕМПЛЯР!
