@@ -32,13 +32,7 @@ class KeepAlive:
         if not self.url.startswith(('http://', 'https://')):
             self.url = f"https://{self.url}"
         
-        # Добавляем путь /health если его нет
-        if "/health" not in self.url and "/ping" not in self.url:
-            self.health_url = f"{self.url}/health"
-        else:
-            self.health_url = self.url
-            
-        logger.info(f"🔧 KeepAlive инициализирован для URL: {self.health_url}")
+        logger.info(f"🔧 KeepAlive инициализирован для URL: {self.url}")
     
     def _ping_service(self):
         """Выполнить один пинг сервиса"""
