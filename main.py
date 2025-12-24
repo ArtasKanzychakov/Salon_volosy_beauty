@@ -58,14 +58,14 @@ START_TIME = None
 
 class HealthHandler(BaseHTTPRequestHandler):
     """Обработчик HTTP запросов для health checks"""
-    
+
     def do_GET(self):
         """Обработка GET запросов"""
         if self.path in ['/', '/health', '/ping']:
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            
+
             # Основная информация о сервисе БЕЗ psutil
             response = {
                 "status": "healthy",
@@ -75,27 +75,27 @@ class HealthHandler(BaseHTTPRequestHandler):
                 "uptime": time.time() - START_TIME if START_TIME else 0,
                 "keep_alive_status": get_keep_alive_status()
             }
-            
+
             self.wfile.write(json.dumps(response, indent=2).encode())
-            
+
         elif self.path == '/status':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            
+
             response = {
                 "bot": "running",
                 "instance": INSTANCE_ID,
                 "web_server": "active",
                 "keep_alive": "active"
             }
-            
+
             self.wfile.write(json.dumps(response, indent=2).encode())
-            
+
         else:
             self.send_response(404)
             self.end_headers()
-    
+
     def log_message(self, format, *args):
         """Отключаем стандартное логирование HTTP запросов"""
         # Можно раскомментировать для отладки
@@ -127,7 +127,7 @@ async def send_photo_if_exists(message: Message, photo_key: str, caption: str):
         logger.warning(f"Таймаут при отправке фото: {photo_key}")
     except Exception as e:
         logger.error(f"Ошибка отправки фото {photo_key}: {e}")
-    
+
     await message.answer(caption, parse_mode="HTML")
     return False
 
@@ -189,6 +189,60 @@ def format_hair_recommendation(user_id):
         response += f"• {color_mask}\n\n"
 
     return response.strip()
+
+# ========== КОНВЕРТЕРЫ ИМЕН ДЛЯ ФОТО ==========
+NAME_TO_KEY = {v: k for k, v in PHOTO_KEYS.items()}
+SIMPLIFIED_NAMES = {
+    # ========== ТЕЛО ==========
+    "Молочко для тела": "body_milk",
+    "Гидрофильное масло": "hydrophilic_oil",
+    "Крем-суфле": "cream_body",
+    "Скраб кофе/кокос": "body_scrub",
+    "Гель для душа (вишня/манго/лимон)": "shower_gel",
+    "Баттер для тела": "body_butter",
+    "Гиалуроновая кислота для лица": "hyaluronic_acid",
+    "Антицеллюлитный скраб (мята)": "anticellulite_scrub",
+
+    # ========== ВОЛОСЫ - ОБЩИЕ ==========
+    "Биолипидный спрей": "biolipid_spray",
+    "Сухое масло спрей": "dry_oil_spray",
+    "Масло ELIXIR": "oil_elixir",
+    "Молочко для волос": "hair_milk",
+    "Масло-концентрат": "oil_concentrate",
+    "Флюид для волос": "hair_fluid",
+    "Шампунь реконстракт": "reconstruct_shampoo",
+    "Маска реконстракт": "reconstruct_mask",
+    "Протеиновый крем": "protein_cream",
+
+    # ========== БЛОНДИНКИ ==========
+    "Шампунь для осветленных волос с гиалуроновой кислотой": "blonde_shampoo",
+    "Кондиционер для осветленных волос с гиалуроновой кислотой": "blonde_conditioner",
+    "Маска для осветленных волос с гиалуроновой кислотой": "blonde_mask",
+
+    # ========== ОКРАШЕННЫЕ ==========
+    "Шампунь для окрашенных волос с коллагеном": "colored_shampoo",
+    "Кондиционер для окрашенных волос с коллагеном": "colored_conditioner",
+    "Маска для окрашенных волос с коллагеном": "colored_mask",
+
+    # ========== ОТТЕНОЧНЫЕ МАСКИ ==========
+    "Оттеночная маска Холодный шоколад": "mask_cold_chocolate",
+    "Оттеночная маска Медный": "mask_copper",
+
+    # ========== КОЛЛАЖИ ==========
+    "Коллаж для тела": "collage_body",
+    "Коллаж для блондинок": "collage_blonde",
+    "Коллаж: Окрашенные волосы": "collage_colored",
+    "Коллаж: Натуральные волосы": "collage_natural",
+    "Коллаж: Ломкость волос": "collage_lomkost",
+    "Коллаж: Тусклость": "collage_tusk",
+    "Коллаж: Пушистость": "collage_fluffy",
+    "Коллаж: Тонкие волосы": "collage_thin",
+    "Коллаж: Поврежденные волосы": "collage_damaged",
+    "Коллаж: Объем": "collage_volume",
+    "Коллаж: Чувствительная кожа головы": "collage_scalp",
+    "Коллаж: Выпадение волос": "collage_loss",
+    "Коллаж: Перхоть/зуд": "collage_dandruff"
+}
 
 # ========== ОБРАБОТЧИКИ КОМАНД ==========
 
@@ -428,59 +482,6 @@ async def show_hair_recommendation(message: Message, state: FSMContext, user_id)
 
 # ========== АДМИН-ПАНЕЛЬ ==========
 
-NAME_TO_KEY = {v: k for k, v in PHOTO_KEYS.items()}
-SIMPLIFIED_NAMES = {
-    # ========== ТЕЛО ==========
-    "Молочко для тела": "body_milk",
-    "Гидрофильное масло": "hydrophilic_oil",
-    "Крем-суфле": "cream_body",
-    "Скраб кофе/кокос": "body_scrub",
-    "Гель для душа (вишня/манго/лимон)": "shower_gel",
-    "Баттер для тела": "body_butter",
-    "Гиалуроновая кислота для лица": "hyaluronic_acid",
-    "Антицеллюлитный скраб (мята)": "anticellulite_scrub",
-
-    # ========== ВОЛОСЫ - ОБЩИЕ ==========
-    "Биолипидный спрей": "biolipid_spray",
-    "Сухое масло спрей": "dry_oil_spray",
-    "Масло ELIXIR": "oil_elixir",
-    "Молочко для волос": "hair_milk",
-    "Масло-концентрат": "oil_concentrate",
-    "Флюид для волос": "hair_fluid",
-    "Шампунь реконстракт": "reconstruct_shampoo",
-    "Маска реконстракт": "reconstruct_mask",
-    "Протеиновый крем": "protein_cream",
-
-    # ========== БЛОНДИНКИ ==========
-    "Шампунь для осветленных волос с гиалуроновой кислотой": "blonde_shampoo",
-    "Кондиционер для осветленных волос с гиалуроновой кислотой": "blonde_conditioner",
-    "Маска для осветленных волос с гиалуроновой кислотой": "blonde_mask",
-
-    # ========== ОКРАШЕННЫЕ ==========
-    "Шампунь для окрашенных волос с коллагеном": "colored_shampoo",
-    "Кондиционер для окрашенных волос с коллагеном": "colored_conditioner",
-    "Маска для окрашенных волос с коллагеном": "colored_mask",
-
-    # ========== ОТТЕНОЧНЫЕ МАСКИ ==========
-    "Оттеночная маска Холодный шоколад": "mask_cold_chocolate",
-    "Оттеночная маска Медный": "mask_copper",
-
-    # ========== КОЛЛАЖИ ==========
-    "Коллаж для тела": "collage_body",
-    "Коллаж для блондинок": "collage_blonde",
-    "Коллаж: Окрашенные волосы": "collage_colored",
-    "Коллаж: Натуральные волосы": "collage_natural",
-    "Коллаж: Ломкость волос": "collage_lomkost",
-    "Коллаж: Тусклость": "collage_tusk",
-    "Коллаж: Пушистость": "collage_fluffy",
-    "Коллаж: Тонкие волосы": "collage_thin",
-    "Коллаж: Поврежденные волосы": "collage_damaged",
-    "Коллаж: Объем": "collage_volume",
-    "Коллаж: Чувствительная кожа головы": "collage_scalp",
-    "Коллаж: Выпадение волос": "collage_loss",
-    "Коллаж: Перхоть/зуд": "collage_dandruff"
-}
-
 @router.message(F.text == "admin2026")
 async def admin_access(message: Message, state: FSMContext):
     """Вход в админ-панель"""
@@ -544,12 +545,15 @@ async def admin_status(message: Message):
 
     await message.answer(response)
 
-# Обработка выбора категорий фото
+# ========== ЗАГРУЗКА ФОТО: ВЫБОР КАТЕГОРИИ ==========
 @router.message(AdminState.UPLOAD, F.text.in_([
     "🧴 Тело", "💇 Волосы - общие", "👱‍♀️ Блондинки",
     "🎨 Окрашенные", "🎨 Оттеночные маски", "🖼 Коллажи"
 ]))
-async def admin_category_handler(message: Message):
+async def admin_category_handler(message: Message, state: FSMContext):
+    """Обработка выбора категории для загрузки фото"""
+    logger.info(f"📁 Категория выбрана: {message.text}, состояние: {await state.get_state()}")
+    
     if message.text == "🧴 Тело":
         await message.answer("Выберите продукт для тела:", reply_markup=get_body_photos_menu())
     elif message.text == "💇 Волосы - общие":
@@ -563,21 +567,33 @@ async def admin_category_handler(message: Message):
     elif message.text == "🖼 Коллажи":
         await message.answer("Выберите коллаж:", reply_markup=get_collage_menu())
 
+# ========== ЗАГРУЗКА ФОТО: ВЫБОР КОНКРЕТНОГО ПРОДУКТА ==========
 @router.message(AdminState.UPLOAD, F.text.in_(SIMPLIFIED_NAMES.keys()))
 async def admin_select_product(message: Message, state: FSMContext):
     """Выбор конкретного продукта для загрузки"""
     product_name = message.text
-    key = SIMPLIFIED_NAMES[product_name]
+    key = SIMPLIFIED_NAMES.get(product_name)
+    
+    logger.info(f"🎯 Выбран продукт: {product_name}, ключ: {key}")
+    
+    if not key:
+        await message.answer(f"❌ Ошибка: продукт '{product_name}' не найден в базе.")
+        return
 
     await state.update_data(selected_key=key, selected_name=product_name)
     await state.set_state(AdminState.WAITING_PHOTO)
 
     existing_photo = photo_storage.get_photo_id(key)
     if existing_photo:
-        await message.answer(f"📸 <b>{product_name}</b>\nФото уже загружено.\nОтправьте новое фото чтобы заменить существующее:")
+        await message.answer(
+            f"📸 <b>{product_name}</b>\n"
+            f"Фото уже загружено.\n"
+            f"Отправьте новое фото чтобы заменить существующее:"
+        )
     else:
         await message.answer(f"📸 <b>{product_name}</b>\nОтправьте фото продукта:")
 
+# ========== ЗАГРУЗКА ФОТО: ПОЛУЧЕНИЕ ФОТО ОТ ПОЛЬЗОВАТЕЛЯ ==========
 @router.message(AdminState.WAITING_PHOTO, F.photo)
 async def admin_receive_photo(message: Message, state: FSMContext):
     """Получение и сохранение фото"""
@@ -586,7 +602,7 @@ async def admin_receive_photo(message: Message, state: FSMContext):
     product_name = data.get("selected_name")
 
     if not key:
-        await message.answer("Ошибка: не выбран продукт")
+        await message.answer("❌ Ошибка: не выбран продукт")
         await state.set_state(AdminState.UPLOAD)
         await message.answer("Выберите категорию:", reply_markup=get_photo_categories_menu())
         return
@@ -594,15 +610,24 @@ async def admin_receive_photo(message: Message, state: FSMContext):
     photo = message.photo[-1]
     file_id = photo.file_id
 
-    photo_storage.save_photo_id(key, file_id)
-
-    await message.answer(
-        f"✅ <b>Фото успешно загружено!</b>\n"
-        f"Продукт: {product_name}\n"
-        f"ID фото сохранен в БАЗЕ ДАННЫХ.\n\n"
-        f"Продолжайте загрузку или проверьте статус.",
-        reply_markup=get_photo_categories_menu()
-    )
+    success = photo_storage.save_photo_id(key, file_id)
+    
+    if success:
+        await message.answer(
+            f"✅ <b>Фото успешно загружено!</b>\n"
+            f"Продукт: {product_name}\n"
+            f"ID фото сохранен в БАЗЕ ДАННЫХ.\n\n"
+            f"Продолжайте загрузку или проверьте статус.",
+            reply_markup=get_photo_categories_menu()
+        )
+    else:
+        await message.answer(
+            f"❌ <b>Ошибка при сохранении фото!</b>\n"
+            f"Продукт: {product_name}\n"
+            f"Ключ: {key}\n\n"
+            f"Попробуйте еще раз.",
+            reply_markup=get_photo_categories_menu()
+        )
 
     await state.set_state(AdminState.UPLOAD)
 
@@ -610,7 +635,7 @@ async def admin_receive_photo(message: Message, state: FSMContext):
 async def admin_wrong_input(message: Message):
     await message.answer("❌ Пожалуйста, отправьте фото!")
 
-# Назад в админ-панель
+# ========== ЗАГРУЗКА ФОТО: НАЗАД ==========
 @router.message(AdminState.UPLOAD, F.text == "🔙 Назад")
 async def admin_upload_back(message: Message, state: FSMContext):
     await state.set_state(AdminState.MAIN)
@@ -621,7 +646,7 @@ async def admin_back_to_categories(message: Message, state: FSMContext):
     await state.set_state(AdminState.UPLOAD)
     await message.answer("Выберите категорию продукта:", reply_markup=get_photo_categories_menu())
 
-# Удаление фото
+# ========== УДАЛЕНИЕ ФОТО ==========
 @router.message(AdminState.DELETE_SELECT, F.text == "🗑 Выбрать для удаления")
 async def admin_delete_select(message: Message):
     all_photos = photo_storage.get_all_photos()
@@ -701,6 +726,19 @@ async def admin_delete_back(message: Message, state: FSMContext):
     await state.set_state(AdminState.MAIN)
     await message.answer("Выберите действие:", reply_markup=get_admin_main_menu())
 
+# ========== ДОПОЛНИТЕЛЬНЫЙ ОТЛАДОЧНЫЙ ХЭНДЛЕР ==========
+@router.message(AdminState.UPLOAD)
+async def admin_upload_debug(message: Message, state: FSMContext):
+    """Отладочный хэндлер для всех сообщений в AdminState.UPLOAD"""
+    logger.info(f"DEBUG AdminState.UPLOAD: текст='{message.text}', состояние={await state.get_state()}")
+    # Показываем пользователю все доступные опции
+    await message.answer(
+        f"ℹ️ Вы в режиме загрузки фото.\n"
+        f"Текст: '{message.text}'\n\n"
+        f"Выберите категорию из меню:",
+        reply_markup=get_photo_categories_menu()
+    )
+
 # ========== ЗАПУСК БОТА ==========
 async def run_bot():
     """Основная функция запуска бота"""
@@ -746,7 +784,7 @@ def main():
     """Главная функция"""
     global START_TIME
     START_TIME = time.time()
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
