@@ -6,6 +6,7 @@ import signal
 import hashlib
 import socket
 import json
+import time
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -65,18 +66,13 @@ class HealthHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
-            import time
-            import psutil
-            import os
-            
-            # Основная информация о сервисе
+            # Основная информация о сервисе БЕЗ psutil
             response = {
                 "status": "healthy",
                 "service": "telegram-bot",
                 "instance_id": INSTANCE_ID,
                 "timestamp": time.time(),
                 "uptime": time.time() - START_TIME if START_TIME else 0,
-                "memory_usage_mb": round(psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, 2),
                 "keep_alive_status": get_keep_alive_status()
             }
             
@@ -699,34 +695,34 @@ async def run_bot():
     """Основная функция запуска бота"""
     logger.info(f"🚀 Запуск Telegram бота (экземпляр: {INSTANCE_ID})...")
 
-    # 1. Останавливаем ВСЕ старые инстансы бота
+    # 1. СИЛЬНО УВЕЛИЧЕННАЯ ЗАДЕРЖКА перед запуском (60 секунд!)
+    logger.info("⏳ Ожидание 60 секунд для завершения старых процессов...")
+    await asyncio.sleep(60)
+
+    # 2. Удаляем вебхук
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        logger.info("✅ Вебхук удален, старые инстансы остановлены")
+        logger.info("✅ Вебхук удален")
     except Exception as e:
         logger.warning(f"⚠️ Ошибка при удалении вебхука: {e}")
 
-    # 2. Даем время на завершение старых процессов
-    await asyncio.sleep(5)
+    # 3. Дополнительная задержка
+    await asyncio.sleep(10)
 
     print("=" * 50)
     print(f"🤖 БОТ ЗАПУЩЕН (ID: {INSTANCE_ID})")
     print("✅ Диалоговый консультант по косметике")
-    print("✅ Ветка: Тело (4 вопроса)")
-    print("✅ Ветка: Волосы (5-6 шагов с мультивыбором)")
-    print("✅ Админ-панель: admin2026")
-    print("✅ Фото хранятся в БАЗЕ ДАННЫХ (SQLite)")
+    print("✅ Фото хранятся в БАЗЕ ДАННЫХ")
     print("✅ Keep-alive система: АКТИВНА")
     print("=" * 50)
 
-    # 3. Запускаем polling с защитой от конфликтов
+    # 4. Запускаем polling
     await dp.start_polling(
         bot,
-        skip_updates=True,  # Пропускаем старые сообщения
-        allowed_updates=["message", "callback_query"],  # Только нужные апдейты
-        timeout=60,
-        relax=0.5,
-        close_bot_session=False
+        skip_updates=True,
+        allowed_updates=["message"],
+        timeout=30,
+        relax=0.5
     )
 
 def signal_handler(sig, frame):
@@ -738,7 +734,7 @@ def signal_handler(sig, frame):
 def main():
     """Главная функция"""
     global START_TIME
-    START_TIME = asyncio.get_event_loop().time()
+    START_TIME = time.time()
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
