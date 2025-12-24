@@ -109,6 +109,7 @@ def get_admin_main_menu():
         keyboard=[
             [KeyboardButton(text="📤 Загрузить фото")],
             [KeyboardButton(text="🗑 Удалить фото")],
+            [KeyboardButton(text="👁 Просмотреть фото")],
             [KeyboardButton(text="📊 Статус фото")],
             [KeyboardButton(text="🔙 Выйти из админки")]
         ],
@@ -123,7 +124,6 @@ def get_photo_categories_menu():
             [KeyboardButton(text="👱‍♀️ Блондинки")],
             [KeyboardButton(text="🎨 Окрашенные")],
             [KeyboardButton(text="🎨 Оттеночные маски")],
-            [KeyboardButton(text="🖼 Коллажи")],
             [KeyboardButton(text="🔙 Назад")]
         ],
         resize_keyboard=True
@@ -138,7 +138,7 @@ def get_body_photos_menu():
         [KeyboardButton(text="Скраб кофе/кокос")],
         [KeyboardButton(text="Гель для душа (вишня/манго/лимон)")],
         [KeyboardButton(text="Баттер для тела")],
-        [KeyboardButton(text="Гиалуроновая кислота для лица")],  # ← ДОБАВЛЕНО
+        [KeyboardButton(text="Гиалуроновая кислота для лица")],
         [KeyboardButton(text="Антицеллюлитный скраб (мята)")],
         [KeyboardButton(text="🔙 К категориям")]
     ]
@@ -185,30 +185,21 @@ def get_tone_masks_menu():
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
-def get_collage_menu():
-    buttons = [
-        [KeyboardButton(text="Коллаж для тела")],
-        [KeyboardButton(text="Коллаж для блондинок")],
-        [KeyboardButton(text="Коллаж: Окрашенные волосы")],
-        [KeyboardButton(text="Коллаж: Натуральные волосы")],
-        [KeyboardButton(text="Коллаж: Ломкость волос")],
-        [KeyboardButton(text="Коллаж: Тусклость")],
-        [KeyboardButton(text="Коллаж: Пушистость")],
-        [KeyboardButton(text="Коллаж: Тонкие волосы")],
-        [KeyboardButton(text="Коллаж: Поврежденные волосы")],
-        [KeyboardButton(text="Коллаж: Объем")],
-        [KeyboardButton(text="Коллаж: Чувствительная кожа головы")],
-        [KeyboardButton(text="Коллаж: Выпадение волос")],
-        [KeyboardButton(text="Коллаж: Перхоть/зуд")],
-        [KeyboardButton(text="🔙 К категориям")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
 def get_delete_confirmation():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="✅ Да, удалить")],
             [KeyboardButton(text="❌ Нет, отмена")]
+        ],
+        resize_keyboard=True
+    )
+
+def get_admin_view_menu():
+    """Клавиатура для просмотра фото"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👁 Просмотреть все фото")],
+            [KeyboardButton(text="🔙 Назад в админку")]
         ],
         resize_keyboard=True
     )
