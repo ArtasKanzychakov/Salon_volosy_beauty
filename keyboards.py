@@ -120,7 +120,7 @@ def get_photo_categories_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🧴 Тело")],
-            [KeyboardButton(text="💇 Волосы - общие")],
+            [KeyboardButton(text="💇 Волосы - общие")],  # ← ИСПРАВЛЕНО: один дефис
             [KeyboardButton(text="👱‍♀️ Блондинки")],
             [KeyboardButton(text="🎨 Окрашенные")],
             [KeyboardButton(text="🎨 Оттеночные маски")],
