@@ -430,6 +430,7 @@ async def show_hair_recommendation(message: Message, state: FSMContext, user_id)
 
 NAME_TO_KEY = {v: k for k, v in PHOTO_KEYS.items()}
 SIMPLIFIED_NAMES = {
+    # ========== ТЕЛО ==========
     "Молочко для тела": "body_milk",
     "Гидрофильное масло": "hydrophilic_oil",
     "Крем-суфле": "cream_body",
@@ -438,6 +439,8 @@ SIMPLIFIED_NAMES = {
     "Баттер для тела": "body_butter",
     "Гиалуроновая кислота для лица": "hyaluronic_acid",
     "Антицеллюлитный скраб (мята)": "anticellulite_scrub",
+
+    # ========== ВОЛОСЫ - ОБЩИЕ ==========
     "Биолипидный спрей": "biolipid_spray",
     "Сухое масло спрей": "dry_oil_spray",
     "Масло ELIXIR": "oil_elixir",
@@ -447,14 +450,22 @@ SIMPLIFIED_NAMES = {
     "Шампунь реконстракт": "reconstruct_shampoo",
     "Маска реконстракт": "reconstruct_mask",
     "Протеиновый крем": "protein_cream",
+
+    # ========== БЛОНДИНКИ ==========
     "Шампунь для осветленных волос с гиалуроновой кислотой": "blonde_shampoo",
     "Кондиционер для осветленных волос с гиалуроновой кислотой": "blonde_conditioner",
     "Маска для осветленных волос с гиалуроновой кислотой": "blonde_mask",
+
+    # ========== ОКРАШЕННЫЕ ==========
     "Шампунь для окрашенных волос с коллагеном": "colored_shampoo",
     "Кондиционер для окрашенных волос с коллагеном": "colored_conditioner",
     "Маска для окрашенных волос с коллагеном": "colored_mask",
+
+    # ========== ОТТЕНОЧНЫЕ МАСКИ ==========
     "Оттеночная маска Холодный шоколад": "mask_cold_chocolate",
     "Оттеночная маска Медный": "mask_copper",
+
+    # ========== КОЛЛАЖИ ==========
     "Коллаж для тела": "collage_body",
     "Коллаж для блондинок": "collage_blonde",
     "Коллаж: Окрашенные волосы": "collage_colored",
@@ -743,7 +754,7 @@ def main():
     # Render бесплатный тариф засыпает после 15 минут бездействия
     # 8 минут - безопасный интервал
     start_keep_alive(
-        url="https://salon-volosy-beauty10.onrender.com",
+        url="https://salon-volosy-beauty11.onrender.com",
         interval=480  # 8 минут = 480 секунд
     )
 
