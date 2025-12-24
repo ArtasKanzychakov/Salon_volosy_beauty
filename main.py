@@ -5,6 +5,7 @@ import sys
 import signal
 import hashlib
 import socket
+import json
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -24,6 +25,8 @@ from user_storage import *
 # Импортируем ВСЁ из нового photo_database.py
 from photo_database import photo_storage, PHOTO_KEYS
 from states import UserState, AdminState
+# Импортируем систему keep-alive
+from keep_alive import start_keep_alive, stop_keep_alive, get_keep_alive_status
 
 # ========== НАСТРОЙКА ЛОГГИРОВАНИЯ ==========
 logging.basicConfig(
@@ -49,21 +52,62 @@ router = Router()
 dp.include_router(router)
 
 # ========== HTTP-СЕРВЕР ДЛЯ RENDER ==========
+# Глобальная переменная для времени старта
+START_TIME = None
+
 class HealthHandler(BaseHTTPRequestHandler):
+    """Обработчик HTTP запросов для health checks"""
+    
     def do_GET(self):
-        if self.path in ['/', '/health']:
+        """Обработка GET запросов"""
+        if self.path in ['/', '/health', '/ping']:
             self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
-            self.wfile.write(b'Bot is alive')
+            
+            import time
+            import psutil
+            import os
+            
+            # Основная информация о сервисе
+            response = {
+                "status": "healthy",
+                "service": "telegram-bot",
+                "instance_id": INSTANCE_ID,
+                "timestamp": time.time(),
+                "uptime": time.time() - START_TIME if START_TIME else 0,
+                "memory_usage_mb": round(psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024, 2),
+                "keep_alive_status": get_keep_alive_status()
+            }
+            
+            self.wfile.write(json.dumps(response, indent=2).encode())
+            
+        elif self.path == '/status':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            
+            response = {
+                "bot": "running",
+                "instance": INSTANCE_ID,
+                "web_server": "active",
+                "keep_alive": "active"
+            }
+            
+            self.wfile.write(json.dumps(response, indent=2).encode())
+            
         else:
             self.send_response(404)
             self.end_headers()
-
+    
     def log_message(self, format, *args):
+        """Отключаем стандартное логирование HTTP запросов"""
+        # Можно раскомментировать для отладки
+        # logger.debug(f"HTTP: {args}")
         pass
 
 def run_http_server():
+    """Запуск HTTP сервера в отдельном потоке"""
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), HealthHandler)
     logger.info(f"🌐 HTTP-сервер запущен на порту {port}")
@@ -672,6 +716,7 @@ async def run_bot():
     print("✅ Ветка: Волосы (5-6 шагов с мультивыбором)")
     print("✅ Админ-панель: admin2026")
     print("✅ Фото хранятся в БАЗЕ ДАННЫХ (SQLite)")
+    print("✅ Keep-alive система: АКТИВНА")
     print("=" * 50)
 
     # 3. Запускаем polling с защитой от конфликтов
@@ -687,12 +732,24 @@ async def run_bot():
 def signal_handler(sig, frame):
     """Обработчик сигналов для graceful shutdown"""
     print(f'\n⚠️ Получен сигнал остановки (экземпляр: {INSTANCE_ID}). Завершаю работу бота...')
+    stop_keep_alive()
     sys.exit(0)
 
 def main():
     """Главная функция"""
+    global START_TIME
+    START_TIME = asyncio.get_event_loop().time()
+    
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+    # Запускаем систему keep-alive (пинг каждые 8 минут)
+    # Render бесплатный тариф засыпает после 15 минут бездействия
+    # 8 минут - безопасный интервал
+    start_keep_alive(
+        url="https://salon-volosy-beauty10.onrender.com",
+        interval=480  # 8 минут = 480 секунд
+    )
 
     http_thread = Thread(target=run_http_server, daemon=True)
     http_thread.start()
@@ -704,6 +761,9 @@ def main():
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}", exc_info=True)
         return 1
+    finally:
+        # Гарантированно останавливаем keep-alive при выходе
+        stop_keep_alive()
 
     return 0
 
