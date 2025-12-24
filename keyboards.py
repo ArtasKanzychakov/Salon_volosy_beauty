@@ -1,3 +1,4 @@
+# keyboards.py
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 # ========== ГЛАВНОЕ МЕНЮ ==========
@@ -12,7 +13,8 @@ def get_main_menu():
 def get_final_menu():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🔄 Новый подбор")]
+            [KeyboardButton(text="🔄 Новый подбор")],
+            [KeyboardButton(text="📍 Точки"), KeyboardButton(text="🚚 Доставка")]
         ],
         resize_keyboard=True
     )
@@ -46,10 +48,10 @@ def get_hair_problems_menu(selected_problems=None):
     """Клавиатура для выбора проблем (можно несколько)"""
     if selected_problems is None:
         selected_problems = []
-    
+
     buttons = []
     row = []
-    
+
     problems = [
         "Ломкость",
         "Выпадение",
@@ -61,23 +63,23 @@ def get_hair_problems_menu(selected_problems=None):
         "Очень поврежденные",
         "Ничего из перечисленного, только общий уход"
     ]
-    
+
     for i, problem in enumerate(problems):
         # Добавляем галочку, если проблема уже выбрана
         display_text = problem
         if problem in selected_problems:
             display_text = f"✅ {problem}"
-        
+
         row.append(KeyboardButton(text=display_text))
-        
+
         if len(row) == 2 or i == len(problems) - 1:
             buttons.append(row)
             row = []
-    
+
     # Кнопка продолжения
     buttons.append([KeyboardButton(text="➡️ Продолжить")])
     buttons.append([KeyboardButton(text="◀️ Назад")])
-    
+
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 def get_yes_no_menu():
@@ -128,6 +130,7 @@ def get_photo_categories_menu():
     )
 
 def get_body_photos_menu():
+    """Клавиатура для выбора фото продуктов тела"""
     buttons = [
         [KeyboardButton(text="Молочко для тела")],
         [KeyboardButton(text="Гидрофильное масло")],
@@ -135,6 +138,7 @@ def get_body_photos_menu():
         [KeyboardButton(text="Скраб кофе/кокос")],
         [KeyboardButton(text="Гель для душа (вишня/манго/лимон)")],
         [KeyboardButton(text="Баттер для тела")],
+        [KeyboardButton(text="Гиалуроновая кислота для лица")],  # ← ДОБАВЛЕНО
         [KeyboardButton(text="Антицеллюлитный скраб (мята)")],
         [KeyboardButton(text="🔙 К категориям")]
     ]
@@ -183,6 +187,7 @@ def get_tone_masks_menu():
 
 def get_collage_menu():
     buttons = [
+        [KeyboardButton(text="Коллаж для тела")],
         [KeyboardButton(text="Коллаж для блондинок")],
         [KeyboardButton(text="Коллаж: Окрашенные волосы")],
         [KeyboardButton(text="Коллаж: Натуральные волосы")],
