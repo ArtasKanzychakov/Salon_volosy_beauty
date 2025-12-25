@@ -1,145 +1,117 @@
-# photo_database.py - Хранилище фото в базе данных
 import os
-from sqlalchemy import create_engine, Column, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+import sqlalchemy as db
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import Column, String, Text, Integer, DateTime
+from datetime import datetime
 
-# ========== ВСЕ КЛЮЧИ ФОТО ЗДЕСЬ ==========
-PHOTO_KEYS = {
-    # ========== ТЕЛО ==========
-    "body_milk": "Молочко для тела",
-    "hydrophilic_oil": "Гидрофильное масло",
-    "cream_body": "Крем-суфле",
-    "body_scrub": "Скраб кофе/кокос",
-    "shower_gel": "Гель для душа (вишня/манго/лимон)",
-    "body_butter": "Баттер для тела",
-    "hyaluronic_acid": "Гиалуроновая кислота для лица",
-    "anticellulite_scrub": "Антицеллюлитный скраб (мята)",
-
-    # ========== ВОЛОСЫ - ОБЩИЕ ==========
-    "biolipid_spray": "Биолипидный спрей",
-    "dry_oil_spray": "Сухое масло спрей",
-    "oil_elixir": "Масло ELIXIR",
-    "hair_milk": "Молочко для волос",
-    "oil_concentrate": "Масло-концентрат",
-    "hair_fluid": "Флюид для волос",
-    "reconstruct_shampoo": "Шампунь реконстракт",
-    "reconstruct_mask": "Маска реконстракт",
-    "protein_cream": "Протеиновый крем",
-
-    # ========== БЛОНДИНКИ ==========
-    "blonde_shampoo": "Шампунь для осветленных волос с гиалуроновой кислотой",
-    "blonde_conditioner": "Кондиционер для осветленных волос с гиалуроновой кислотой",
-    "blonde_mask": "Маска для осветленных волос с гиалуроновой кислотой",
-
-    # ========== ОКРАШЕННЫЕ ==========
-    "colored_shampoo": "Шампунь для окрашенных волос с коллагеном",
-    "colored_conditioner": "Кондиционер для окрашенных волос с коллагеном",
-    "colored_mask": "Маска для окрашенных волос с коллагеном",
-
-    # ========== ОТТЕНОЧНЫЕ МАСКИ ==========
-    "mask_cold_chocolate": "Оттеночная маска Холодный шоколад",
-    "mask_copper": "Оттеночная маска Медный",
-}
-
-# ========== НАСТРОЙКА БАЗЫ ДАННЫХ ==========
+# Получаем URL базы данных из переменных окружения Render
 DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    DATABASE_URL = "sqlite:///bot_data.db"
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(bind=engine)
+# Критически важная строка: Render иногда выдаёт 'postgres://', а SQLAlchemy требует 'postgresql://'
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Создаем движок для подключения к базе
+engine = db.create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ========== МОДЕЛЬ ДЛЯ ХРАНЕНИЯ ФОТО ==========
-class StoredPhoto(Base):
-    __tablename__ = "stored_photos"
+# Модель для хранения информации о фото
+class ProductPhoto(Base):
+    __tablename__ = "product_photos"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    product_key = Column(String(100), index=True)  # Ключ продукта (например, "shampoo_normal")
+    category = Column(String(50))  # Категория ("волосы" или "тело")
+    file_id = Column(Text)  # Telegram file_id
+    file_type = Column(String(10))  # "photo" или "document"
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
 
-    photo_key = Column(String, primary_key=True)      # Ключ, например "body_milk"
-    file_id = Column(String)                          # Telegram file_id
-    display_name = Column(String)                     # Человеческое название
+# Создаем таблицы в базе данных
+Base.metadata.create_all(bind=engine)
 
-Base.metadata.create_all(engine)
-
-# ========== КЛАСС ДЛЯ РАБОТЫ С БАЗОЙ ДАННЫХ ==========
-class DatabasePhotoStorage:
-    def __init__(self):
-        self.session = SessionLocal()
-        self._init_database()
-
-    def _init_database(self):
-        """Заполняем базу всеми возможными ключами при первом запуске"""
-        for key, name in PHOTO_KEYS.items():
-            existing = self.session.get(StoredPhoto, key)
-            if not existing:
-                new_photo = StoredPhoto(
-                    photo_key=key,
-                    file_id=None,
-                    display_name=name
-                )
-                self.session.add(new_photo)
-        self.session.commit()
-        print(f"✅ База данных фото инициализирована: {len(PHOTO_KEYS)} записей")
-
-    def save_photo_id(self, key: str, file_id: str):
-        """Сохраняем или обновляем file_id"""
-        photo = self.session.get(StoredPhoto, key)
-        if photo:
-            photo.file_id = file_id
-            self.session.commit()
-            print(f"✅ Фото сохранено в БД: {key} -> {file_id[:20]}...")
-            return True
-        print(f"❌ Ошибка: ключ {key} не найден в БД")
+# Функции для работы с базой
+def save_photo_to_db(product_key: str, category: str, file_id: str, file_type: str = "photo"):
+    """Сохраняет photo_id в базу данных"""
+    session = SessionLocal()
+    try:
+        photo_record = ProductPhoto(
+            product_key=product_key,
+            category=category,
+            file_id=file_id,
+            file_type=file_type
+        )
+        session.add(photo_record)
+        session.commit()
+        print(f"[DB] Saved photo for {product_key}, category: {category}, file_id: {file_id}")
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"[DB ERROR] Failed to save photo: {e}")
         return False
+    finally:
+        session.close()
 
-    def get_photo_id(self, key: str):
-        """Получаем file_id по ключу"""
-        photo = self.session.get(StoredPhoto, key)
-        if photo and photo.file_id:
-            return photo.file_id
-        return None
-
-    def delete_photo(self, key: str):
-        """Удаляем фото (очищаем file_id)"""
-        photo = self.session.get(StoredPhoto, key)
-        if photo:
-            photo.file_id = None
-            self.session.commit()
-            return True
-        return False
-
-    def get_all_photos(self):
-        """Получаем все загруженные фото"""
-        result = {}
-        photos = self.session.query(StoredPhoto).filter(
-            StoredPhoto.file_id.isnot(None)
+def get_photos_from_db(product_key: str):
+    """Получает все photo_id для конкретного продукта"""
+    session = SessionLocal()
+    try:
+        photos = session.query(ProductPhoto).filter(
+            ProductPhoto.product_key == product_key
         ).all()
+        return [photo.file_id for photo in photos]
+    except Exception as e:
+        print(f"[DB ERROR] Failed to get photos: {e}")
+        return []
+    finally:
+        session.close()
 
-        for photo in photos:
-            result[photo.photo_key] = photo.file_id
+def get_all_photos():
+    """Получает все фото из базы (для админ-панели)"""
+    session = SessionLocal()
+    try:
+        photos = session.query(ProductPhoto).all()
+        return photos
+    except Exception as e:
+        print(f"[DB ERROR] Failed to get all photos: {e}")
+        return []
+    finally:
+        session.close()
 
-        return result
+def delete_photo_from_db(photo_id: int):
+    """Удаляет фото из базы по ID"""
+    session = SessionLocal()
+    try:
+        photo = session.query(ProductPhoto).filter(ProductPhoto.id == photo_id).first()
+        if photo:
+            session.delete(photo)
+            session.commit()
+            return True
+    except Exception as e:
+        session.rollback()
+        print(f"[DB ERROR] Failed to delete photo: {e}")
+        return False
+    finally:
+        session.close()
 
-    def get_photo_status(self):
-        """Получаем статус загрузки всех фото"""
-        status = {}
-        photos = self.session.query(StoredPhoto).all()
+def clear_category_photos(category: str):
+    """Очищает все фото категории"""
+    session = SessionLocal()
+    try:
+        session.query(ProductPhoto).filter(ProductPhoto.category == category).delete()
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"[DB ERROR] Failed to clear category: {e}")
+        return False
+    finally:
+        session.close()
 
-        for photo in photos:
-            status[photo.display_name] = photo.file_id is not None
-
-        return status
-
-    def get_missing_photos(self):
-        """Получаем список фото, которые еще не загружены"""
-        missing = []
-        photos = self.session.query(StoredPhoto).all()
-
-        for photo in photos:
-            if not photo.file_id:
-                missing.append(photo.display_name)
-
-        return missing
-
-# Глобальный экземпляр хранилища
-photo_storage = DatabasePhotoStorage()
+# Проверка подключения при импорте
+try:
+    connection = engine.connect()
+    print("[DB] ✅ Successfully connected to PostgreSQL database")
+    connection.close()
+except Exception as e:
+    print(f"[DB] ❌ Failed to connect to database: {e}")
