@@ -24,7 +24,7 @@ from keyboards import *
 from body_data import BODY_DATA
 from hair_data import HAIR_DATA
 from user_storage import *
-from photo_database import photo_storage, PHOTO_KEYS
+from photo_database import SessionLocal, ProductPhoto, PHOTO_KEYS
 from states import UserState, AdminState
 from keep_alive import start_keep_alive, stop_keep_alive, get_keep_alive_status
 
