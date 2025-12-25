@@ -30,11 +30,14 @@ class ProductPhoto(Base):
 # Создаем таблицы в базе данных
 Base.metadata.create_all(bind=engine)
 
-# Функции для работы с базой
+# Функции для работы с базой (Новые функции для PostgreSQL)
 def save_photo_to_db(product_key: str, category: str, file_id: str, file_type: str = "photo"):
     """Сохраняет photo_id в базу данных"""
     session = SessionLocal()
     try:
+        # Удаляем старые записи для этого продукта (чтобы обновить)
+        session.query(ProductPhoto).filter(ProductPhoto.product_key == product_key).delete()
+        
         photo_record = ProductPhoto(
             product_key=product_key,
             category=category,
@@ -43,7 +46,7 @@ def save_photo_to_db(product_key: str, category: str, file_id: str, file_type: s
         )
         session.add(photo_record)
         session.commit()
-        print(f"[DB] Saved photo for {product_key}, category: {category}, file_id: {file_id}")
+        print(f"[DB] Saved photo for {product_key}, category: {category}, file_id: {file_id[:20]}...")
         return True
     except Exception as e:
         session.rollback()
@@ -87,6 +90,7 @@ def delete_photo_from_db(photo_id: int):
             session.delete(photo)
             session.commit()
             return True
+        return False
     except Exception as e:
         session.rollback()
         print(f"[DB ERROR] Failed to delete photo: {e}")
@@ -108,6 +112,73 @@ def clear_category_photos(category: str):
     finally:
         session.close()
 
+# ========== КОМПАТИБИЛЬНОСТЬ СО СТАРЫМ КОДОМ ==========
+# Класс для обратной совместимости со старым кодом, который ожидает photo_storage
+class PhotoStorageCompat:
+    def __init__(self):
+        print("[DB] Initialized compatibility layer photo_storage")
+    
+    def get_photo_id(self, key: str):
+        """Получить file_id для ключа (для обратной совместимости)"""
+        photos = get_photos_from_db(key)
+        return photos[0] if photos else None
+    
+    def save_photo_id(self, key: str, file_id: str):
+        """Сохранить фото (для обратной совместимости)"""
+        # Определяем категорию по ключу
+        category = "волосы"  # по умолчанию
+        if "body" in key or "hyaluronic" in key or "anticellulite" in key:
+            category = "тело"
+        elif "blonde" in key:
+            category = "блондинки"
+        elif "colored" in key:
+            category = "окрашенные"
+        elif "mask" in key:
+            category = "оттеночные_маски"
+        elif "reconstruct" in key or "biolipid" in key or "protein" in key:
+            category = "волосы"
+            
+        return save_photo_to_db(key, category, file_id, "photo")
+    
+    def get_all_photos(self):
+        """Получить все фото (для обратной совместимости)"""
+        photos = get_all_photos()
+        # Преобразуем в старый формат {ключ: file_id}
+        result = {}
+        for photo in photos:
+            result[photo.product_key] = photo.file_id
+        return result
+    
+    def delete_photo(self, key: str):
+        """Удалить фото по ключу (для обратной совместимости)"""
+        session = SessionLocal()
+        try:
+            deleted_count = session.query(ProductPhoto).filter(ProductPhoto.product_key == key).delete()
+            session.commit()
+            return deleted_count > 0
+        except Exception as e:
+            session.rollback()
+            print(f"[DB ERROR] Failed to delete photo: {e}")
+            return False
+        finally:
+            session.close()
+    
+    def get_photo_status(self):
+        """Получить статус загрузки фото (для обратной совместимости)"""
+        status = {}
+        # Используем глобальный PHOTO_KEYS который будет импортирован из config
+        try:
+            from config import PHOTO_KEYS
+            for name, key in PHOTO_KEYS.items():
+                photos = get_photos_from_db(key)
+                status[name] = bool(photos)
+        except ImportError:
+            print("[DB WARNING] PHOTO_KEYS not found in config")
+        return status
+
+# Создаем экземпляр для обратной совместимости
+photo_storage = PhotoStorageCompat()
+
 # Проверка подключения при импорте
 try:
     connection = engine.connect()
@@ -115,3 +186,41 @@ try:
     connection.close()
 except Exception as e:
     print(f"[DB] ❌ Failed to connect to database: {e}")
+
+# Словарь ключей продуктов (должен быть перенесен из config.py)
+PHOTO_KEYS = {
+    # Тело
+    "body_milk": "Молочко для тела",
+    "hydrophilic_oil": "Гидрофильное масло",
+    "cream_body": "Крем-суфле",
+    "body_scrub": "Скраб кофе/кокос",
+    "shower_gel": "Гель для душа (вишня/манго/лимон)",
+    "body_butter": "Баттер для тела",
+    "hyaluronic_acid": "Гиалуроновая кислота для лица",
+    "anticellulite_scrub": "Антицеллюлитный скраб (мята)",
+    
+    # Волосы - общие
+    "biolipid_spray": "Биолипидный спрей",
+    "dry_oil_spray": "Сухое масло спрей",
+    "oil_elixir": "Масло ELIXIR",
+    "hair_milk": "Молочко для волос",
+    "oil_concentrate": "Масло-концентрат",
+    "hair_fluid": "Флюид для волос",
+    "reconstruct_shampoo": "Шампунь реконстракт",
+    "reconstruct_mask": "Маска реконстракт",
+    "protein_cream": "Протеиновый крем",
+    
+    # Блондинки
+    "blonde_shampoo": "Шампунь для осветленных волос с гиалуроновой кислотой",
+    "blonde_conditioner": "Кондиционер для осветленных волос с гиалуроновой кислотой",
+    "blonde_mask": "Маска для осветленных волос с гиалуроновой кислотой",
+    
+    # Окрашенные
+    "colored_shampoo": "Шампунь для окрашенных волос с коллагеном",
+    "colored_conditioner": "Кондиционер для окрашенных волос с коллагеном",
+    "colored_mask": "Маска для окрашенных волос с коллагеном",
+    
+    # Оттеночные маски
+    "mask_cold_chocolate": "Оттеночная маска Холодный шоколад",
+    "mask_copper": "Оттеночная маска Медный",
+}
