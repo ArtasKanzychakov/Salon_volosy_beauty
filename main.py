@@ -109,47 +109,47 @@ def find_product_key(product_name):
     # Прямое совпадение
     if product_name in SIMPLIFIED_NAMES:
         return SIMPLIFIED_NAMES[product_name]
-    
+
     # Поиск по части названия (в обе стороны)
     for name, key in SIMPLIFIED_NAMES.items():
         if product_name.lower() in name.lower() or name.lower() in product_name.lower():
             return key
-    
+
     # Поиск по ключевым словам
     keywords = product_name.lower().split()
     for name, key in SIMPLIFIED_NAMES.items():
         name_lower = name.lower()
         if any(word in name_lower for word in keywords if len(word) > 3):
             return key
-    
+
     return None
 
 async def send_product_photos(message: Message, product_keys: List[str], caption: str = ""):
     """Отправить все фото продуктов одним сообщением (медиагруппой)"""
     try:
         media_group = []
-        
+
         # ДЕТАЛЬНАЯ ОТЛАДКА
         logger.info(f"🖼 Ищем фото для ключей: {product_keys}")
-        
+
         for i, key in enumerate(product_keys):
             photo_id = photo_storage.get_photo_id(key)
             product_name = PHOTO_KEYS.get(key, key)
-            
+
             if photo_id:
                 logger.info(f"  ✅ [{i+1}] Найдено фото: '{product_name}' (ключ: {key})")
                 if not media_group:  # Первое фото получает подпись
                     media_group.append(InputMediaPhoto(media=photo_id, caption=caption, parse_mode="HTML"))
                 else:
                     media_group.append(InputMediaPhoto(media=photo_id))
-                
+
                 # Ограничение Telegram: максимум 10 фото в медиагруппе
                 if len(media_group) >= 10:
                     logger.warning(f"Достигнут лимит в 10 фото")
                     break
             else:
                 logger.warning(f"  ❌ [{i+1}] Фото не найдено: '{product_name}' (ключ: {key})")
-        
+
         if media_group:
             logger.info(f"✅ Отправляем {len(media_group)} фото в медиагруппе")
             await asyncio.wait_for(
@@ -159,12 +159,12 @@ async def send_product_photos(message: Message, product_keys: List[str], caption
             return True
         else:
             logger.warning("❌ Нет фото для отправки, отправляем только текст")
-            
+
     except asyncio.TimeoutError:
         logger.error("Таймаут при отправке медиагруппы")
     except Exception as e:
         logger.error(f"Ошибка отправки медиагруппы: {e}", exc_info=True)
-    
+
     # Если фото нет или ошибка, отправляем только текст
     if caption:
         await message.answer(caption, parse_mode="HTML")
@@ -367,7 +367,7 @@ async def body_choice_handler(message: Message, state: FSMContext):
     # Собираем ключи фото для продуктов тела
     body_data = BODY_DATA[choice]
     product_keys = []
-    
+
     # Преобразуем названия продуктов в ключи
     for product in body_data["products"]:
         key = find_product_key(product)
@@ -376,7 +376,7 @@ async def body_choice_handler(message: Message, state: FSMContext):
             logger.info(f"✅ Тело: '{product}' -> ключ: {key}")
         else:
             logger.warning(f"❌ Тело: не найден ключ для продукта: '{product}'")
-    
+
     # Добавляем гиалуроновую кислоту (из note)
     note = body_data["note"]
     if "гиалуроновая кислота" in note.lower():
@@ -597,34 +597,34 @@ async def show_hair_recommendation(message: Message, state: FSMContext, user_id)
 async def check_photos_command(message: Message):
     """Команда для проверки загруженных фото"""
     all_photos = photo_storage.get_all_photos()
-    
+
     if not all_photos:
         await message.answer("❌ В базе нет ни одного фото!")
         return
-    
+
     response = "📋 <b>Загруженные фото в базе:</b>\n\n"
     for key, file_id in all_photos.items():
         product_name = PHOTO_KEYS.get(key, key)
         response += f"• <b>{product_name}</b>\n"
         response += f"  Ключ: <code>{key}</code>\n"
         response += f"  ID: <code>{file_id[:30]}...</code>\n\n"
-    
+
     await message.answer(response)
 
 @router.message(F.text.startswith("/check "))
 async def check_product_photo(message: Message):
     """Проверить фото конкретного продукта"""
     product_name = message.text.replace("/check ", "").strip()
-    
+
     # Ищем ключ
     key = find_product_key(product_name)
-    
+
     if not key:
         await message.answer(f"❌ Продукт '{product_name}' не найден в SIMPLIFIED_NAMES")
         return
-    
+
     photo_id = photo_storage.get_photo_id(key)
-    
+
     if photo_id:
         await message.answer(
             f"✅ <b>{product_name}</b>\n"
@@ -651,7 +651,7 @@ async def debug_info(message: Message):
     response = f"🤖 <b>Отладочная информация:</b>\n\n"
     response += f"ID экземпляра: <code>{INSTANCE_ID}</code>\n"
     response += f"Всего фото в системе: {len(PHOTO_KEYS)}\n"
-    
+
     # Проверяем примеры
     test_products = [
         "Шампунь для окрашенных волос с коллагеном",
@@ -659,13 +659,13 @@ async def debug_info(message: Message):
         "Маска для окрашенных волос с коллагеном",
         "Биолипидный спрей"
     ]
-    
+
     response += "\n<b>Проверка ключей:</b>\n"
     for product in test_products:
         key = find_product_key(product)
         has_photo = "✅ Есть" if photo_storage.get_photo_id(key) else "❌ Нет"
         response += f"• {product}: <code>{key}</code> - {has_photo}\n"
-    
+
     await message.answer(response)
 
 # ========== АДМИН-ПАНЕЛЬ ==========
@@ -742,7 +742,7 @@ async def admin_status(message: Message):
 async def admin_category_handler(message: Message, state: FSMContext):
     """Обработка выбора категории для загрузки фото"""
     logger.info(f"📁 Категория выбрана: {message.text}, состояние: {await state.get_state()}")
-    
+
     if message.text == "🧴 Тело":
         await message.answer("Выберите продукт для тела:", reply_markup=get_body_photos_menu())
     elif message.text == "💇 Волосы - общие":
@@ -759,9 +759,9 @@ async def admin_select_product(message: Message, state: FSMContext):
     """Выбор конкретного продукта для загрузки"""
     product_name = message.text
     key = SIMPLIFIED_NAMES.get(product_name)
-    
+
     logger.info(f"🎯 Выбран продукт: {product_name}, ключ: {key}")
-    
+
     if not key:
         await message.answer(f"❌ Ошибка: продукт '{product_name}' не найден в базе.")
         return
@@ -796,7 +796,7 @@ async def admin_receive_photo(message: Message, state: FSMContext):
     file_id = photo.file_id
 
     success = photo_storage.save_photo_id(key, file_id)
-    
+
     if success:
         await message.answer(
             f"✅ <b>Фото успешно загружено!</b>\n"
@@ -852,17 +852,17 @@ async def admin_delete_select(message: Message):
 async def admin_view_photos(message: Message):
     """Просмотр загруженных фото"""
     all_photos = photo_storage.get_all_photos()
-    
+
     if not all_photos:
         await message.answer("❌ Нет загруженных фото для просмотра.")
         return
-    
+
     # Создаем медиагруппу из всех фото (не более 10)
     media_group = []
     for i, (key, file_id) in enumerate(all_photos.items()):
         if i >= 10:  # Ограничение Telegram
             break
-            
+
         product_name = PHOTO_KEYS.get(key, key)
         if not media_group:  # Первое фото получает подпись
             media_group.append(InputMediaPhoto(
@@ -872,12 +872,12 @@ async def admin_view_photos(message: Message):
             ))
         else:
             media_group.append(InputMediaPhoto(media=file_id))
-    
+
     try:
         await message.answer_media_group(media_group)
     except Exception as e:
         await message.answer(f"❌ Ошибка при отправке фото: {e}\n\nПопробуйте посмотреть фото по одному.")
-        
+
         # Альтернатива: отправляем по одному
         for key, file_id in list(all_photos.items())[:5]:  # Первые 5
             product_name = PHOTO_KEYS.get(key, key)
@@ -903,7 +903,7 @@ async def admin_confirm_delete(message: Message, state: FSMContext):
             await message.answer_photo(photo_id, caption=f"📸 <b>{product_name}</b>")
         except Exception as e:
             await message.answer(f"⚠️ Не удалось показать фото: {e}")
-    
+
     await state.update_data(delete_key=key, delete_name=product_name)
     await state.set_state(AdminState.DELETE_CONFIRM)
 
