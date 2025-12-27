@@ -1,5 +1,10 @@
+import os
+
 # Конфигурация бота
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # Замените на ваш токен
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()  # ← Берем из переменных окружения
+if not BOT_TOKEN:
+    print("⚠️ ВНИМАНИЕ: BOT_TOKEN не установлен в переменных окружения!")
+    
 ADMIN_PASSWORD = "admin2026"
 
 # Данные для ветки "Тело"
@@ -34,7 +39,7 @@ HAIR_VOLUME = ["Да, хочу объем", "Нет, не нужно"]
 def get_hair_colors(hair_type: str):
     """Возвращает список цветов в зависимости от типа волос"""
     if hair_type == "Окрашенные блондинки":
-        return ["Блондинка"]  # Уточнить, нужны ли подтипы
+        return ["Блондинка"]
     elif hair_type == "Окрашенные все остальные":
         return ["Брюнетка", "Шатенка", "Русая", "Рыжая"]
     return []
