@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 from typing import List
 
-import psycopg2
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -20,7 +19,7 @@ import config
 import keyboards
 from states import UserState, AdminState
 from user_storage import user_data_storage
-from photo_database import PhotoDatabase
+from photo_database import photo_db
 from keep_alive import keep_alive_start
 
 # Генерация уникального ID для экземпляра
@@ -32,9 +31,6 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=config.BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
-
-# Инициализация базы данных фото
-photo_db = PhotoDatabase()
 
 # Упрощенные названия для ключей фото
 SIMPLIFIED_NAMES = {
