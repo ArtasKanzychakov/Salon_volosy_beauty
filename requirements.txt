@@ -4,3 +4,4 @@ aiofiles==25.1.0
 SQLAlchemy==2.0.30
 psycopg2-binary==2.9.10
 aiohttp==3.9.5
+requests==2.32.3  # ДОБАВЬТЕ ЭТУ СТРОКУ
