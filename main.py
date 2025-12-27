@@ -22,6 +22,8 @@ from user_storage import user_data_storage
 from photo_database import photo_db
 from keep_alive import keep_alive_start
 
+# ... ВСЁ ОСТАЛЬНОЕ БЕЗ ИЗМЕНЕНИЙ ...
+
 # Генерация уникального ID для экземпляра
 INSTANCE_ID = str(uuid.uuid4())[:8]
 logging.basicConfig(level=logging.INFO, format=f'%(asctime)s - {INSTANCE_ID} - %(levelname)s - %(message)s')
