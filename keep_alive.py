@@ -1,6 +1,5 @@
 import threading
 import time
-import requests
 import logging
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -41,15 +40,27 @@ def keep_alive_worker(url, interval=480):
     """Рабочий поток для keep-alive"""
     logger.info(f"🚀 Keep-alive worker запущен. Интервал: {interval} сек.")
     
+    # Проверяем наличие requests
+    try:
+        import requests
+        has_requests = True
+    except ImportError:
+        has_requests = False
+        logger.warning("⚠️ Библиотека 'requests' не установлена. Keep-alive pings отключены.")
+    
     while True:
-        try:
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                logger.info(f"✅ Keep-alive ping успешен: {url}")
-            else:
-                logger.warning(f"⚠️ Keep-alive ping неожиданный статус: {response.status_code}")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Keep-alive ping ошибка: {e}")
+        if has_requests:
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code == 200:
+                    logger.info(f"✅ Keep-alive ping успешен: {url}")
+                else:
+                    logger.warning(f"⚠️ Keep-alive ping неожиданный статус: {response.status_code}")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"❌ Keep-alive ping ошибка: {e}")
+        else:
+            # Без requests просто логируем и спим
+            logger.info("⏳ Keep-alive: ожидание (requests не установлен)")
         
         time.sleep(interval)
 
