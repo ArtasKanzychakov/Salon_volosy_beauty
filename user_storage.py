@@ -3,7 +3,6 @@ USER_STORAGE.PY - Хранилище данных пользователей
 """
 
 from typing import Dict, Any
-import json
 from datetime import datetime
 
 # Простое хранилище в памяти
@@ -44,27 +43,21 @@ def remove_selected_problem(user_id: int, problem: str):
         if problem in user_data[user_id]["selected_problems"]:
             user_data[user_id]["selected_problems"].remove(problem)
 
-def get_selected_problems(user_id: int):
+def get_selected_problems(user_id: int) -> list:
     """Получить список выбранных проблем"""
-    return user_data.get(user_id, {}).get("selected_problems", [])
+    if user_id not in user_data:
+        return []
+    return user_data[user_id].get("selected_problems", [])
 
 def clear_selected_problems(user_id: int):
     """Очистить список выбранных проблем"""
     if user_id in user_data and "selected_problems" in user_data[user_id]:
         user_data[user_id]["selected_problems"] = []
 
-def get_user_history(user_id: int):
-    """Получить историю выбора пользователя"""
-    data = get_user_data(user_id)
-    return {
-        "hair_type": data.get("hair_type"),
-        "scalp_type": data.get("scalp_type"),
-        "hair_volume": data.get("hair_volume"),
-        "hair_color": data.get("hair_color"),
-        "problems": data.get("selected_problems", []),
-        "body_goal": data.get("body_goal"),
-        "last_consultation": datetime.now().isoformat()
-    }
+# Для совместимости со старым кодом
+def get_user_data_value(user_id: int, key: str, default: Any = None) -> Any:
+    """Алиас для get_user_data с ключом"""
+    return get_user_data(user_id, key) or default
 
 class UserDataStorage:
     """Класс для совместимости"""
