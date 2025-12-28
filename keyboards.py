@@ -42,13 +42,13 @@ def hair_problems_keyboard(selected_problems: list = None) -> ReplyKeyboardMarku
     """Проблемы волос (мультивыбор)"""
     if selected_problems is None:
         selected_problems = []
-    
+
     builder = ReplyKeyboardBuilder()
-    
+
     for problem in config.HAIR_PROBLEMS:
         prefix = "✅ " if problem in selected_problems else "☐ "
         builder.add(KeyboardButton(text=f"{prefix}{problem}"))
-    
+
     builder.add(KeyboardButton(text="✅ Готово"))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
     builder.adjust(2)
@@ -76,10 +76,10 @@ def hair_color_keyboard(hair_type: str) -> ReplyKeyboardMarkup:
     """Цвет волос (только для окрашенных)"""
     colors = config.get_hair_colors(hair_type)
     builder = ReplyKeyboardBuilder()
-    
+
     for color in colors:
         builder.add(KeyboardButton(text=color))
-    
+
     builder.add(KeyboardButton(text="🏠 Главное меню"))
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
@@ -99,15 +99,15 @@ def admin_category_keyboard() -> ReplyKeyboardMarkup:
 def admin_subcategory_keyboard(category: str) -> ReplyKeyboardMarkup:
     """Выбор подкатегории для админки"""
     builder = ReplyKeyboardBuilder()
-    
+
     if category == "волосы":
         subcategories = config.PHOTO_STRUCTURE["волосы"].keys()
     else:
         subcategories = config.PHOTO_STRUCTURE["тело"].keys()
-    
+
     for subcategory in subcategories:
         builder.add(KeyboardButton(text=subcategory))
-    
+
     builder.add(KeyboardButton(text="↩️ Назад к категориям"))
     builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
@@ -115,12 +115,12 @@ def admin_subcategory_keyboard(category: str) -> ReplyKeyboardMarkup:
 def admin_products_keyboard(category: str, subcategory: str) -> ReplyKeyboardMarkup:
     """Выбор продукта для загрузки фото"""
     builder = ReplyKeyboardBuilder()
-    
+
     products = config.PHOTO_STRUCTURE[category][subcategory]
-    
+
     for product_key, display_name in products:
         builder.add(KeyboardButton(text=display_name))
-    
+
     builder.add(KeyboardButton(text="↩️ Назад к подкатегориям"))
     builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
