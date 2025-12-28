@@ -84,22 +84,43 @@ def hair_color_keyboard(hair_type: str) -> ReplyKeyboardMarkup:
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
+# ==================== АДМИН-КЛАВИАТУРЫ ====================
+
 def admin_category_keyboard() -> ReplyKeyboardMarkup:
     """Выбор категории для админки"""
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="💇‍♀️ Волосы"))
     builder.add(KeyboardButton(text="🧴 Тело"))
+    builder.add(KeyboardButton(text="📊 Статистика"))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
-def admin_products_keyboard(products: list) -> ReplyKeyboardMarkup:
-    """Выбор продукта для админки"""
+def admin_subcategory_keyboard(category: str) -> ReplyKeyboardMarkup:
+    """Выбор подкатегории для админки"""
     builder = ReplyKeyboardBuilder()
     
-    for product in products:
-        builder.add(KeyboardButton(text=product))
+    if category == "волосы":
+        subcategories = config.PHOTO_STRUCTURE["волосы"].keys()
+    else:
+        subcategories = config.PHOTO_STRUCTURE["тело"].keys()
+    
+    for subcategory in subcategories:
+        builder.add(KeyboardButton(text=subcategory))
     
     builder.add(KeyboardButton(text="↩️ Назад к категориям"))
-    builder.adjust(2)
+    builder.adjust(1)
+    return builder.as_markup(resize_keyboard=True)
+
+def admin_products_keyboard(category: str, subcategory: str) -> ReplyKeyboardMarkup:
+    """Выбор продукта для загрузки фото"""
+    builder = ReplyKeyboardBuilder()
+    
+    products = config.PHOTO_STRUCTURE[category][subcategory]
+    
+    for product_key, display_name in products:
+        builder.add(KeyboardButton(text=display_name))
+    
+    builder.add(KeyboardButton(text="↩️ Назад к подкатегориям"))
+    builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
