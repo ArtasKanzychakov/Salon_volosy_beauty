@@ -1,6 +1,6 @@
 """
 MAIN.PY - Главный файл бота SVOY AV.COSMETIC
-Исправленная версия с корректной работой БД и возможностью делать несколько подборок
+Исправленная версия
 """
 
 import os
@@ -38,14 +38,6 @@ from user_storage import (
     clear_selected_problems,
     delete_user_data
 )
-
-# Импорт keep_alive
-try:
-    from keep_alive import keep_alive
-    KEEP_ALIVE_AVAILABLE = True
-except ImportError:
-    KEEP_ALIVE_AVAILABLE = False
-    print("⚠️ Модуль keep_alive не найден. Health check не будет работать.")
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -881,9 +873,6 @@ async def self_ping():
 
 def run_scheduler():
     """Запуск планировщика для self-ping"""
-    # Пингуем сразу при запуске
-    asyncio.run(self_ping())
-
     # Запускаем пинг каждые 5 минут
     schedule.every(5).minutes.do(lambda: asyncio.run(self_ping()))
 
@@ -899,18 +888,14 @@ async def on_startup():
 
     # Инициализация базы данных
     db_connected = await photo_db.init_db()
-    if not db_connected:
-        logger.error("❌ Не удалось подключиться к базе данных!")
-    else:
+    logger.info(f"📊 Статус подключения к БД: {db_connected}")
+    if db_connected:
         photo_count = await photo_db.count_photos()
-        logger.info(f"📊 Фото в базе: {photo_count}")
+        logger.info(f"📸 Фото в базе: {photo_count}")
 
     # Запуск health check сервера
-    if KEEP_ALIVE_AVAILABLE:
-        keep_alive()
-        logger.info("🌐 Health check сервер запущен")
-    else:
-        logger.warning("⚠️ Health check сервер не запущен")
+    config.keep_alive()
+    logger.info("🌐 Health check сервер запущен")
 
     # Запуск self-ping в отдельном потоке
     scheduler_thread = Thread(target=run_scheduler, daemon=True)
