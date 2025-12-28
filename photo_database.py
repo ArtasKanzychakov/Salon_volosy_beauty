@@ -29,11 +29,14 @@ class PhotoDatabase:
             if database_url.startswith("postgres://"):
                 database_url = database_url.replace("postgres://", "postgresql://", 1)
             
+            logger.info(f"🔄 Подключение к БД: {database_url[:50]}...")
+            
             self.pool = await asyncpg.create_pool(
                 dsn=database_url,
                 min_size=1,
                 max_size=10,
-                command_timeout=60
+                command_timeout=60,
+                ssl='require'
             )
             
             # Создаем таблицу для фото
@@ -61,19 +64,34 @@ class PhotoDatabase:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Ошибка подключения к базе данных: {e}")
+            logger.error(f"❌ Ошибка подключения к базе данных: {e}", exc_info=True)
             return False
     
     async def save_photo(self, product_key: str, category: str, 
                         subcategory: str, display_name: str, 
                         file_id: str) -> bool:
         """Сохранение фото в базу данных"""
+        logger.info(f"🔄 Попытка сохранить фото: {product_key}, {category}, {display_name}")
+        
         if not self.is_connected:
-            logger.error("База данных не подключена!")
+            logger.error("❌ База данных не подключена!")
             return False
         
         try:
             async with self.pool.acquire() as conn:
+                # Проверяем таблицу
+                table_exists = await conn.fetchval(
+                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'product_photos')"
+                )
+                logger.info(f"📋 Таблица существует: {table_exists}")
+                
+                # Проверяем, есть ли уже такой ключ
+                existing = await conn.fetchrow(
+                    "SELECT product_key FROM product_photos WHERE product_key = $1",
+                    product_key
+                )
+                logger.info(f"🔑 Ключ уже существует: {bool(existing)}")
+                
                 await conn.execute('''
                     INSERT INTO product_photos 
                     (product_key, category, subcategory, display_name, file_id)
@@ -84,11 +102,11 @@ class PhotoDatabase:
                         uploaded_at = NOW()
                 ''', product_key, category, subcategory, display_name, file_id)
             
-            logger.info(f"💾 Фото сохранено: {display_name} ({product_key})")
+            logger.info(f"✅ Фото сохранено: {display_name} ({product_key})")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Ошибка сохранения фото: {e}")
+            logger.error(f"❌ Ошибка сохранения фото: {e}", exc_info=True)
             return False
     
     async def get_photo_id(self, product_key: str) -> Optional[str]:
