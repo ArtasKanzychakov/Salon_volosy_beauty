@@ -62,6 +62,31 @@ class PhotoDatabase:
             logger.error(f"❌ Ошибка подключения к БД: {e}")
             return False
 
+    async def check_table_structure(self) -> bool:
+        """Проверка структуры таблицы"""
+        if not self.is_connected:
+            return False
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Проверяем, существует ли таблица и ее структура
+                result = await conn.fetch('''
+                    SELECT column_name, data_type, is_nullable
+                    FROM information_schema.columns
+                    WHERE table_name = 'product_photos'
+                    ORDER BY ordinal_position
+                ''')
+                
+                logger.info("📊 Структура таблицы product_photos:")
+                for row in result:
+                    logger.info(f"  {row['column_name']}: {row['data_type']} ({'NULL' if row['is_nullable'] == 'YES' else 'NOT NULL'})")
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки структуры таблицы: {e}")
+            return False
+
     async def save_photo(self, product_key: str, category: str, 
                         subcategory: str, display_name: str, 
                         file_id: str) -> bool:
@@ -72,21 +97,34 @@ class PhotoDatabase:
 
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute('''
-                    INSERT INTO product_photos 
-                    (product_key, category, subcategory, display_name, file_id)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (product_key) 
-                    DO UPDATE SET 
-                        file_id = EXCLUDED.file_id,
-                        created_at = CURRENT_TIMESTAMP
-                ''', product_key, category, subcategory, display_name, file_id)
-
-            logger.info(f"✅ Фото сохранено: {display_name}")
-            return True
+                # Пробуем простой INSERT без конфликта сначала
+                try:
+                    await conn.execute('''
+                        INSERT INTO product_photos 
+                        (product_key, category, subcategory, display_name, file_id)
+                        VALUES ($1, $2, $3, $4, $5)
+                    ''', product_key, category, subcategory, display_name, file_id)
+                    logger.info(f"✅ Фото сохранено (INSERT): {display_name}")
+                    return True
+                    
+                except asyncpg.UniqueViolationError:
+                    # Если ключ уже существует, обновляем
+                    logger.info(f"🔄 Ключ {product_key} уже существует, обновляем...")
+                    await conn.execute('''
+                        UPDATE product_photos 
+                        SET file_id = $1,
+                            created_at = CURRENT_TIMESTAMP
+                        WHERE product_key = $2
+                    ''', file_id, product_key)
+                    logger.info(f"✅ Фото обновлено (UPDATE): {display_name}")
+                    return True
+                    
+                except Exception as e:
+                    logger.error(f"❌ Ошибка SQL при сохранении: {e}")
+                    return False
 
         except Exception as e:
-            logger.error(f"❌ Ошибка сохранения фото: {e}")
+            logger.error(f"❌ Общая ошибка сохранения фото: {e}")
             return False
 
     async def get_photo_id(self, product_key: str) -> Optional[str]:
