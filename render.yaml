@@ -1,15 +1,22 @@
 services:
   - type: web
-    name: salon-beauty-bot
+    name: salon-volosy-beauty
     env: python
     region: frankfurt
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install -r requirements.txt
+      python -c "import sys; print('Python version:', sys.version)"
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
         sync: false
       - key: DATABASE_URL
-        value: "sqlite:///bot_data.db"
+        sync: false
+      - key: ADMIN_PASSWORD
+        value: "admin2026"
+      - key: PORT
+        value: "10000"
     autoDeploy: true
     healthCheckPath: /health
+    healthCheckTimeout: 180
