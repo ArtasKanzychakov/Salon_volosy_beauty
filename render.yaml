@@ -4,19 +4,14 @@ services:
     env: python
     region: frankfurt
     plan: free
-    buildCommand: |
-      pip install -r requirements.txt
-      python -c "import sys; print('Python version:', sys.version)"
+    buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
         sync: false
       - key: DATABASE_URL
-        sync: false
+        value: "postgresql://salon_volosy_photo_bazz_user:Sa0KCOH64FxaJV3Bt7VxRMQRDX4F5L6U@dpg-d56fkmer433s73e4mvog-a/salon_volosy_photo_bazz"
       - key: ADMIN_PASSWORD
         value: "admin2026"
-      - key: PORT
-        value: "10000"
     autoDeploy: true
     healthCheckPath: /health
-    healthCheckTimeout: 180
