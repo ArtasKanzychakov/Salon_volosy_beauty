@@ -1,95 +1,102 @@
-# Простое хранилище данных пользователя
-user_data = {}
+"""
+USER_STORAGE.PY - Хранилище данных пользователей
+С улучшенной системой очистки и мониторингом
+"""
 
-def save_user_data(user_id, key, value):
-    """Сохранить данные пользователя"""
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    user_data[user_id][key] = value
+import asyncio
+import time
+from typing import Dict, Any, Optional
+from collections import defaultdict
+import logging
 
-def get_user_data(user_id, key=None):
-    """Получить данные пользователя"""
-    if user_id not in user_data:
-        return None if key else {}
-    if key:
-        return user_data[user_id].get(key)
-    return user_data[user_id]
+logger = logging.getLogger(__name__)
 
-def delete_user_data(user_id):
-    """Удалить все данные пользователя"""
-    if user_id in user_data:
-        del user_data[user_id]
-
-# Функции для мультивыбора проблем
-def add_selected_problem(user_id, problem):
-    """Добавить проблему в список выбранных"""
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    if "selected_problems" not in user_data[user_id]:
-        user_data[user_id]["selected_problems"] = []
-
-    # Если выбрано "Ничего из перечисленного", очищаем список
-    if problem == "Ничего из перечисленного, только общий уход":
-        user_data[user_id]["selected_problems"] = ["Общий уход"]
-        return
-
-    # Убираем "Общий уход", если выбирается конкретная проблема
-    if "Общий уход" in user_data[user_id]["selected_problems"] and problem != "Общий уход":
-        user_data[user_id]["selected_problems"].remove("Общий уход")
-
-    if problem not in user_data[user_id]["selected_problems"]:
-        user_data[user_id]["selected_problems"].append(problem)
-
-def remove_selected_problem(user_id, problem):
-    """Удалить проблему из списка"""
-    if user_id in user_data and "selected_problems" in user_data[user_id]:
-        if problem in user_data[user_id]["selected_problems"]:
-            user_data[user_id]["selected_problems"].remove(problem)
-
-        # Если список пустой, добавляем "Общий уход"
-        if not user_data[user_id]["selected_problems"]:
-            user_data[user_id]["selected_problems"] = ["Общий уход"]
-
-def get_selected_problems(user_id):
-    """Получить список выбранных проблем"""
-    problems = user_data.get(user_id, {}).get("selected_problems", [])
-
-    # Если список пустой, значит только общий уход
-    if not problems:
-        return ["Общий уход"]
-
-    # Удаляем дубликаты
-    seen = set()
-    unique_problems = []
-    for problem in problems:
-        if problem not in seen:
-            seen.add(problem)
-            unique_problems.append(problem)
-
-    return unique_problems
-
-def clear_selected_problems(user_id):
-    """Очистить список выбранных проблем"""
-    if user_id in user_data and "selected_problems" in user_data[user_id]:
-        user_data[user_id]["selected_problems"] = []
-
-# Класс для совместимости с новым кодом
 class UserDataStorage:
-    def __init__(self):
+    """Асинхронное хранилище данных пользователей с TTL"""
+    
+    def __init__(self, ttl_hours: int = 24):
+        """
+        :param ttl_hours: Время жизни данных в часах
+        """
         self._storage = {}
+        self._timestamps = {}
+        self.ttl_seconds = ttl_hours * 3600
+        self._cleanup_task = None
+        logger.info(f"Инициализировано хранилище пользователей (TTL: {ttl_hours}ч)")
     
-    def get_data(self, user_id: int):
-        """Получить данные пользователя (совместимость)"""
-        return get_user_data(user_id)
+    async def start_cleanup(self, interval_minutes: int = 30):
+        """Запуск периодической очистки устаревших данных"""
+        async def cleanup_loop():
+            while True:
+                await asyncio.sleep(interval_minutes * 60)
+                await self._cleanup_old_data()
+        
+        self._cleanup_task = asyncio.create_task(cleanup_loop())
+        logger.info(f"Запущена очистка данных каждые {interval_minutes} мин")
     
-    def update_data(self, user_id: int, data: dict):
-        """Обновить данные пользователя (совместимость)"""
-        for key, value in data.items():
-            save_user_data(user_id, key, value)
+    async def stop_cleanup(self):
+        """Остановка очистки"""
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("Очистка данных остановлена")
     
-    def clear_data(self, user_id: int):
-        """Очистить данные пользователя (совместимость)"""
-        delete_user_data(user_id)
+    async def _cleanup_old_data(self):
+        """Очистка устаревших данных"""
+        current_time = time.time()
+        to_delete = []
+        
+        for user_id, timestamp in self._timestamps.items():
+            if current_time - timestamp > self.ttl_seconds:
+                to_delete.append(user_id)
+        
+        for user_id in to_delete:
+            self._storage.pop(user_id, None)
+            self._timestamps.pop(user_id, None)
+        
+        if to_delete:
+            logger.info(f"Очищены данные {len(to_delete)} пользователей")
+    
+    def get_data(self, user_id: int) -> Dict[str, Any]:
+        """Получить данные пользователя"""
+        return self._storage.get(user_id, {}).copy()
+    
+    def update_data(self, user_id: int, data: Dict[str, Any]) -> None:
+        """Обновить данные пользователя"""
+        if user_id not in self._storage:
+            self._storage[user_id] = {}
+        
+        self._storage[user_id].update(data)
+        self._timestamps[user_id] = time.time()
+        logger.debug(f"Обновлены данные пользователя {user_id}")
+    
+    def clear_data(self, user_id: int) -> None:
+        """Очистить данные пользователя"""
+        self._storage.pop(user_id, None)
+        self._timestamps.pop(user_id, None)
+        logger.debug(f"Очищены данные пользователя {user_id}")
+    
+    def get_all_users(self) -> list:
+        """Получить список всех пользователей"""
+        return list(self._storage.keys())
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Статистика хранилища"""
+        return {
+            "total_users": len(self._storage),
+            "total_entries": sum(len(data) for data in self._storage.values()),
+            "oldest_timestamp": min(self._timestamps.values()) if self._timestamps else None,
+            "newest_timestamp": max(self._timestamps.values()) if self._timestamps else None
+        }
 
-# Создаем глобальный объект для импорта в main.py
-user_data_storage = UserDataStorage()
+# Глобальный экземпляр хранилища
+user_data_storage = UserDataStorage(ttl_hours=24)
+
+# Функции для обратной совместимости
+async def init_user_storage():
+    """Инициализация хранилища с запуском очистки"""
+    await user_data_storage.start_cleanup()
+    return user_data_storage
