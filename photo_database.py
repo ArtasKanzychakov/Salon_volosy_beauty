@@ -1,288 +1,228 @@
+"""
+PHOTO_DATABASE.PY - Работа с PostgreSQL базой данных
+С улучшенной обработкой ошибок и мониторингом
+"""
+
 import os
-import sqlalchemy as db
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Text, Integer, DateTime
+import asyncio
+import logging
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-# Получаем URL базы данных из переменных окружения Render
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-# Критически важная строка: Render иногда выдаёт 'postgres://', а SQLAlchemy требует 'postgresql://'
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-# Создаем движок для подключения к базе
-engine = db.create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# Модель для хранения информации о фото
-class ProductPhoto(Base):
-    __tablename__ = "product_photos"
-
-    id = Column(Integer, primary_key=True, index=True)
-    product_key = Column(String(100), index=True)  # Ключ продукта (например, "shampoo_normal")
-    category = Column(String(50))  # Категория ("волосы" или "тело")
-    file_id = Column(Text)  # Telegram file_id
-    file_type = Column(String(10))  # "photo" или "document"
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
-
-# Создаем таблицы в базе данных
-Base.metadata.create_all(bind=engine)
-
-# Функции для работы с базой
-def save_photo_to_db(product_key: str, category: str, file_id: str, file_type: str = "photo"):
-    """Сохраняет photo_id в базу данных"""
-    session = SessionLocal()
-    try:
-        # Удаляем старые записи для этого продукта (чтобы обновить)
-        session.query(ProductPhoto).filter(ProductPhoto.product_key == product_key).delete()
-
-        photo_record = ProductPhoto(
-            product_key=product_key,
-            category=category,
-            file_id=file_id,
-            file_type=file_type
-        )
-        session.add(photo_record)
-        session.commit()
-        print(f"[DB] Saved photo for {product_key}, category: {category}, file_id: {file_id[:20]}...")
-        return True
-    except Exception as e:
-        session.rollback()
-        print(f"[DB ERROR] Failed to save photo: {e}")
-        return False
-    finally:
-        session.close()
-
-def get_photos_from_db(product_key: str):
-    """Получает все photo_id для конкретного продукта"""
-    session = SessionLocal()
-    try:
-        photos = session.query(ProductPhoto).filter(
-            ProductPhoto.product_key == product_key
-        ).all()
-        return [photo.file_id for photo in photos]
-    except Exception as e:
-        print(f"[DB ERROR] Failed to get photos: {e}")
-        return []
-    finally:
-        session.close()
-
-def get_all_photos():
-    """Получает все фото из базы (для админ-панели)"""
-    session = SessionLocal()
-    try:
-        photos = session.query(ProductPhoto).all()
-        return photos
-    except Exception as e:
-        print(f"[DB ERROR] Failed to get all photos: {e}")
-        return []
-    finally:
-        session.close()
-
-def delete_photo_from_db(photo_id: int):
-    """Удаляет фото из базы по ID"""
-    session = SessionLocal()
-    try:
-        photo = session.query(ProductPhoto).filter(ProductPhoto.id == photo_id).first()
-        if photo:
-            session.delete(photo)
-            session.commit()
-            return True
-        return False
-    except Exception as e:
-        session.rollback()
-        print(f"[DB ERROR] Failed to delete photo: {e}")
-        return False
-    finally:
-        session.close()
-
-def clear_category_photos(category: str):
-    """Очищает все фото категории"""
-    session = SessionLocal()
-    try:
-        session.query(ProductPhoto).filter(ProductPhoto.category == category).delete()
-        session.commit()
-        return True
-    except Exception as e:
-        session.rollback()
-        print(f"[DB ERROR] Failed to clear category: {e}")
-        return False
-    finally:
-        session.close()
-
-def count_photos_in_db():
-    """Подсчитывает количество фото в базе"""
-    session = SessionLocal()
-    try:
-        count = session.query(ProductPhoto).count()
-        return count
-    except Exception as e:
-        print(f"[DB ERROR] Failed to count photos: {e}")
-        return 0
-    finally:
-        session.close()
-
-# ========== КОМПАТИБИЛЬНОСТЬ СО СТАРЫМ КОДОМ ==========
-# Класс для обратной совместимости
-class PhotoDatabase:
-    def __init__(self):
-        print("[DB] Initialized PhotoDatabase for compatibility")
-
-    async def get_photo_id(self, key: str):
-        """Получить file_id для ключа (асинхронная версия)"""
-        photos = get_photos_from_db(key)
-        return photos[0] if photos else None
-
-    async def save_photo(self, key: str, file_id: str):
-        """Сохранить фото (асинхронная версия)"""
-        # Определяем категорию по ключу
-        category = "волосы"  # по умолчанию
-        if "body" in key or "hyaluronic" in key or "anticellulite" in key or "тело" in key:
-            category = "тело"
-        elif "blond" in key or "blonde" in key:
-            category = "блондинки"
-        elif "colored" in key:
-            category = "окрашенные"
-        elif "mask" in key:
-            category = "оттеночные_маски"
-        elif "reconstruct" in key or "biolipid" in key or "protein" in key:
-            category = "волосы"
-
-        return save_photo_to_db(key, category, file_id, "photo")
-
-    async def count_photos(self):
-        """Подсчитать фото в базе"""
-        return count_photos_in_db()
-
-    async def delete_photo(self, key: str):
-        """Удалить фото по ключу"""
-        session = SessionLocal()
-        try:
-            deleted_count = session.query(ProductPhoto).filter(ProductPhoto.product_key == key).delete()
-            session.commit()
-            return deleted_count > 0
-        except Exception as e:
-            session.rollback()
-            print(f"[DB ERROR] Failed to delete photo: {e}")
-            return False
-        finally:
-            session.close()
-
-    async def init_db(self):
-        """Инициализация БД (для совместимости)"""
-        # Таблицы уже созданы при импорте модуля
-        print("[DB] Database already initialized")
-        return True
-
-# Старая версия для обратной совместимости
-class PhotoStorageCompat:
-    def __init__(self):
-        print("[DB] Initialized compatibility layer photo_storage")
-
-    def get_photo_id(self, key: str):
-        """Получить file_id для ключа (синхронная версия)"""
-        photos = get_photos_from_db(key)
-        return photos[0] if photos else None
-
-    def save_photo_id(self, key: str, file_id: str):
-        """Сохранить фото (синхронная версия)"""
-        # Определяем категорию по ключу
-        category = "волосы"  # по умолчанию
-        if "body" in key or "hyaluronic" in key or "anticellulite" in key or "тело" in key:
-            category = "тело"
-        elif "blond" in key or "blonde" in key:
-            category = "блондинки"
-        elif "colored" in key:
-            category = "окрашенные"
-        elif "mask" in key:
-            category = "оттеночные_маски"
-        elif "reconstruct" in key or "biolipid" in key or "protein" in key:
-            category = "волосы"
-
-        return save_photo_to_db(key, category, file_id, "photo")
-
-    def get_all_photos(self):
-        """Получить все фото"""
-        photos = get_all_photos()
-        result = {}
-        for photo in photos:
-            result[photo.product_key] = photo.file_id
-        return result
-
-    def delete_photo(self, key: str):
-        """Удалить фото по ключу"""
-        session = SessionLocal()
-        try:
-            deleted_count = session.query(ProductPhoto).filter(ProductPhoto.product_key == key).delete()
-            session.commit()
-            return deleted_count > 0
-        except Exception as e:
-            session.rollback()
-            print(f"[DB ERROR] Failed to delete photo: {e}")
-            return False
-        finally:
-            session.close()
-
-    def get_photo_status(self):
-        """Получить статус загрузки фото"""
-        status = {}
-        try:
-            from config import PHOTO_KEYS
-            for name, key in PHOTO_KEYS.items():
-                photos = get_photos_from_db(key)
-                status[name] = bool(photos)
-        except ImportError:
-            print("[DB WARNING] PHOTO_KEYS not found in config")
-        return status
-
-# Создаем экземпляры для импорта
-photo_storage = PhotoStorageCompat()
-photo_db = PhotoDatabase()  # Для совместимости с main.py
-
-# Проверка подключения при импорте
+# Асинхронные импорты
 try:
-    connection = engine.connect()
-    print("[DB] ✅ Successfully connected to PostgreSQL database")
-    connection.close()
-except Exception as e:
-    print(f"[DB] ❌ Failed to connect to database: {e}")
+    import asyncpg
+    from asyncpg.pool import Pool
+    HAS_ASYNC_PG = True
+except ImportError:
+    HAS_ASYNC_PG = False
+    logging.warning("asyncpg не установлен. Работа с БД будет ограничена.")
 
-# Словарь ключей продуктов
-PHOTO_KEYS = {
-    # Тело
-    "body_milk": "Молочко для тела",
-    "hydrophilic_oil": "Гидрофильное масло",
-    "cream_body": "Крем-суфле",
-    "body_scrub": "Скраб кофе/кокос",
-    "shower_gel": "Гель для душа (вишня/манго/лимон)",
-    "body_butter": "Баттер для тела",
-    "hyaluronic_acid": "Гиалуроновая кислота для лица",
-    "anticellulite_scrub": "Антицеллюлитный скраб (мята)",
+logger = logging.getLogger(__name__)
 
-    # Волосы - общие
-    "biolipid_spray": "Биолипидный спрей",
-    "dry_oil_spray": "Сухое масло спрей",
-    "oil_elixir": "Масло ELIXIR",
-    "hair_milk": "Молочко для волос",
-    "oil_concentrate": "Масло-концентрат",
-    "hair_fluid": "Флюид для волос",
-    "reconstruct_shampoo": "Шампунь реконстракт",
-    "reconstruct_mask": "Маска реконстракт",
-    "protein_cream": "Протеиновый крем",
+class PhotoDatabase:
+    """Асинхронная база данных для хранения фото"""
+    
+    def __init__(self):
+        self.pool: Optional[Pool] = None
+        self.is_connected = False
+        self.connection_string = self._get_connection_string()
+        logger.info("Инициализирована PhotoDatabase")
+    
+    def _get_connection_string(self) -> str:
+        """Получение строки подключения к PostgreSQL"""
+        database_url = os.environ.get("DATABASE_URL", "")
+        
+        if not database_url:
+            logger.error("DATABASE_URL не установлен в переменных окружения!")
+            return ""
+        
+        # Исправление формата для SQLAlchemy/asyncpg
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        
+        logger.info(f"Строка подключения: {database_url[:50]}...")
+        return database_url
+    
+    async def init_db(self) -> bool:
+        """Инициализация подключения к базе данных"""
+        if not HAS_ASYNC_PG:
+            logger.error("asyncpg не установлен. Установите: pip install asyncpg")
+            return False
+        
+        if not self.connection_string:
+            logger.error("Не удалось получить строку подключения")
+            return False
+        
+        try:
+            # Создаем пул соединений
+            self.pool = await asyncpg.create_pool(
+                dsn=self.connection_string,
+                min_size=1,
+                max_size=10,
+                command_timeout=60
+            )
+            
+            # Создаем таблицу если её нет
+            async with self.pool.acquire() as conn:
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS product_photos (
+                        id SERIAL PRIMARY KEY,
+                        product_key VARCHAR(100) NOT NULL,
+                        category VARCHAR(50) NOT NULL,
+                        file_id TEXT NOT NULL,
+                        file_type VARCHAR(20) DEFAULT 'photo',
+                        uploaded_at TIMESTAMP DEFAULT NOW(),
+                        UNIQUE(product_key)
+                    )
+                ''')
+                
+                # Создаем индекс для быстрого поиска
+                await conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_product_key 
+                    ON product_photos(product_key)
+                ''')
+            
+            self.is_connected = True
+            logger.info("✅ База данных инициализирована и подключена")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка подключения к базе данных: {e}")
+            self.is_connected = False
+            return False
+    
+    async def save_photo(self, product_key: str, file_id: str, 
+                        category: str = "unknown") -> bool:
+        """Сохранение фото в базу данных"""
+        if not self.is_connected or not self.pool:
+            logger.error("Нет подключения к базе данных")
+            return False
+        
+        try:
+            async with self.pool.acquire() as conn:
+                # Вставка или обновление записи
+                await conn.execute('''
+                    INSERT INTO product_photos (product_key, category, file_id)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (product_key) 
+                    DO UPDATE SET 
+                        file_id = EXCLUDED.file_id,
+                        uploaded_at = NOW()
+                ''', product_key, category, file_id)
+            
+            logger.info(f"✅ Фото сохранено: {product_key}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения фото {product_key}: {e}")
+            return False
+    
+    async def get_photo_id(self, product_key: str) -> Optional[str]:
+        """Получение file_id по ключу продукта"""
+        if not self.is_connected or not self.pool:
+            logger.error("Нет подключения к базе данных")
+            return None
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    'SELECT file_id FROM product_photos WHERE product_key = $1',
+                    product_key
+                )
+            
+            if row:
+                return row['file_id']
+            else:
+                logger.debug(f"Фото не найдено: {product_key}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения фото {product_key}: {e}")
+            return None
+    
+    async def delete_photo(self, product_key: str) -> bool:
+        """Удаление фото по ключу"""
+        if not self.is_connected or not self.pool:
+            logger.error("Нет подключения к базе данных")
+            return False
+        
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.execute(
+                    'DELETE FROM product_photos WHERE product_key = $1',
+                    product_key
+                )
+            
+            deleted = "DELETE" in result
+            if deleted:
+                logger.info(f"✅ Фото удалено: {product_key}")
+            else:
+                logger.info(f"Фото не найдено для удаления: {product_key}")
+            
+            return deleted
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка удаления фото {product_key}: {e}")
+            return False
+    
+    async def count_photos(self) -> int:
+        """Подсчет количества фото в базе"""
+        if not self.is_connected or not self.pool:
+            return 0
+        
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow('SELECT COUNT(*) as count FROM product_photos')
+                return row['count'] if row else 0
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка подсчета фото: {e}")
+            return 0
+    
+    async def get_all_photos(self) -> List[Dict[str, Any]]:
+        """Получение всех фото из базы"""
+        if not self.is_connected or not self.pool:
+            return []
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    'SELECT product_key, category, uploaded_at FROM product_photos ORDER BY uploaded_at DESC'
+                )
+            
+            return [dict(row) for row in rows]
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения всех фото: {e}")
+            return []
+    
+    async def clear_all_photos(self) -> bool:
+        """Очистка всех фото из базы"""
+        if not self.is_connected or not self.pool:
+            return False
+        
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute('DELETE FROM product_photos')
+            
+            logger.info("✅ Все фото удалены из базы данных")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка очистки базы данных: {e}")
+            return False
+    
+    async def close(self):
+        """Закрытие соединения с базой данных"""
+        if self.pool:
+            await self.pool.close()
+            self.is_connected = False
+            logger.info("Соединение с базой данных закрыто")
 
-    # Блондинки
-    "blonde_shampoo": "Шампунь для осветленных волос с гиалуроновой кислотой",
-    "blonde_conditioner": "Кондиционер для осветленных волос с гиалуроновой кислотой",
-    "blonde_mask": "Маска для осветленных волос с гиалуроновой кислотой",
+# Глобальный экземпляр базы данных
+photo_db = PhotoDatabase()
 
-    # Окрашенные
-    "colored_shampoo": "Шампунь для окрашенных волос с коллагеном",
-    "colored_conditioner": "Кондиционер для окрашенных волос с коллагеном",
-    "colored_mask": "Маска для окрашенных волос с коллагеном",
-
-    # Оттеночные маски
-    "mask_cold_chocolate": "Оттеночная маска Холодный шоколад",
-    "mask_copper": "Оттеночная маска Медный",
-}
+async def init_database():
+    """Инициализация базы данных"""
+    return await photo_db.init_db()
