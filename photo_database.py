@@ -38,10 +38,14 @@ class PhotoDatabase:
                 command_timeout=60
             )
 
-            # Создаем таблицу если ее нет с ПРАВИЛЬНОЙ структурой
+            # ПРИНУДИТЕЛЬНО пересоздаем таблицу с правильной структурой
             async with self.pool.acquire() as conn:
+                # Удаляем старую таблицу если она есть
+                await conn.execute('DROP TABLE IF EXISTS product_photos')
+                
+                # Создаем новую таблицу с ПРАВИЛЬНОЙ структурой
                 await conn.execute('''
-                    CREATE TABLE IF NOT EXISTS product_photos (
+                    CREATE TABLE product_photos (
                         id SERIAL PRIMARY KEY,
                         product_key VARCHAR(100) UNIQUE NOT NULL,
                         category VARCHAR(50) NOT NULL,
@@ -52,7 +56,7 @@ class PhotoDatabase:
                     )
                 ''')
 
-                logger.info("✅ Таблица product_photos создана/проверена")
+                logger.info("✅ Таблица product_photos ПЕРЕСОЗДАНА с правильной структурой")
 
             self.is_connected = True
             logger.info("✅ Подключение к БД успешно!")
@@ -72,7 +76,29 @@ class PhotoDatabase:
 
         try:
             async with self.pool.acquire() as conn:
-                # Используем INSERT с ON CONFLICT
+                # Проверяем, что таблица существует и имеет нужные колонки
+                table_exists = await conn.fetchval(
+                    "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'product_photos')"
+                )
+                
+                if not table_exists:
+                    logger.error("❌ Таблица product_photos не существует!")
+                    return False
+
+                # Проверяем структуру таблицы
+                columns = await conn.fetch(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'product_photos'"
+                )
+                column_names = [col['column_name'] for col in columns]
+                
+                required_columns = ['product_key', 'category', 'subcategory', 'display_name', 'file_id']
+                missing_columns = [col for col in required_columns if col not in column_names]
+                
+                if missing_columns:
+                    logger.error(f"❌ В таблице отсутствуют колонки: {missing_columns}")
+                    return False
+
+                # Сохраняем фото
                 await conn.execute('''
                     INSERT INTO product_photos 
                     (product_key, category, subcategory, display_name, file_id)
