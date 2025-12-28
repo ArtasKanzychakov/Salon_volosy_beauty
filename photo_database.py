@@ -49,9 +49,15 @@ class PhotoDatabase:
                         uploaded_at TIMESTAMP DEFAULT NOW()
                     )
                 ''')
+                
+                # Создаем индекс для быстрого поиска
+                await conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_category 
+                    ON product_photos(category)
+                ''')
             
             self.is_connected = True
-            logger.info("✅ База данных подключена")
+            logger.info("✅ База данных подключена и готова к работе!")
             return True
             
         except Exception as e:
@@ -63,6 +69,7 @@ class PhotoDatabase:
                         file_id: str) -> bool:
         """Сохранение фото в базу данных"""
         if not self.is_connected:
+            logger.error("База данных не подключена!")
             return False
         
         try:
@@ -77,7 +84,7 @@ class PhotoDatabase:
                         uploaded_at = NOW()
                 ''', product_key, category, subcategory, display_name, file_id)
             
-            logger.info(f"✅ Фото сохранено: {display_name} ({product_key})")
+            logger.info(f"💾 Фото сохранено: {display_name} ({product_key})")
             return True
             
         except Exception as e:
@@ -114,7 +121,10 @@ class PhotoDatabase:
                     product_key
                 )
             
-            return "DELETE" in result
+            deleted = "DELETE" in result
+            if deleted:
+                logger.info(f"🗑️ Фото удалено: {product_key}")
+            return deleted
             
         except Exception as e:
             logger.error(f"❌ Ошибка удаления фото: {e}")
@@ -142,7 +152,10 @@ class PhotoDatabase:
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    'SELECT product_key, display_name, subcategory FROM product_photos WHERE category = $1 ORDER BY display_name',
+                    '''SELECT product_key, display_name, subcategory 
+                    FROM product_photos 
+                    WHERE category = $1 
+                    ORDER BY display_name''',
                     category
                 )
             
@@ -160,7 +173,10 @@ class PhotoDatabase:
         try:
             async with self.pool.acquire() as conn:
                 rows = await conn.fetch(
-                    'SELECT product_key, category, subcategory, display_name, uploaded_at FROM product_photos ORDER BY category, display_name'
+                    '''SELECT product_key, category, subcategory, 
+                    display_name, uploaded_at 
+                    FROM product_photos 
+                    ORDER BY category, display_name'''
                 )
             
             return [dict(row) for row in rows]
@@ -169,11 +185,43 @@ class PhotoDatabase:
             logger.error(f"❌ Ошибка получения всех фото: {e}")
             return []
     
+    async def get_recommended_products(self, category: str, 
+                                     subcategory: str = None) -> List[Dict[str, Any]]:
+        """Получение рекомендованных продуктов"""
+        if not self.is_connected:
+            return []
+        
+        try:
+            async with self.pool.acquire() as conn:
+                if subcategory:
+                    rows = await conn.fetch(
+                        '''SELECT product_key, display_name, file_id 
+                        FROM product_photos 
+                        WHERE category = $1 AND subcategory = $2
+                        ORDER BY display_name''',
+                        category, subcategory
+                    )
+                else:
+                    rows = await conn.fetch(
+                        '''SELECT product_key, display_name, file_id 
+                        FROM product_photos 
+                        WHERE category = $1 
+                        ORDER BY display_name''',
+                        category
+                    )
+            
+            return [dict(row) for row in rows]
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения рекомендованных продуктов: {e}")
+            return []
+    
     async def close(self):
         """Закрытие соединения с базой данных"""
         if self.pool:
             await self.pool.close()
             self.is_connected = False
+            logger.info("🔌 Соединение с базой данных закрыто")
 
 # Глобальный экземпляр
 photo_db = PhotoDatabase()
