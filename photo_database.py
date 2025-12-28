@@ -159,3 +159,8 @@ class PhotoDatabase:
         """Закрытие соединения с базой данных"""
         if self.pool:
             await self.pool.close()
+            self.is_connected = False
+            logger.info("🔌 Соединение с базой данных закрыто")
+
+# Глобальный экземпляр
+photo_db = PhotoDatabase()
