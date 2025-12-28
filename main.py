@@ -15,6 +15,7 @@ from typing import List
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -98,7 +99,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                 reply_markup=final_menu_keyboard()
             )
             return
-        
+
         # Проверяем состояние БД
         if not photo_db.is_connected:
             await bot.send_message(
@@ -107,7 +108,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                 reply_markup=final_menu_keyboard()
             )
             return
-        
+
         sent_count = 0
         for photo_key in photo_keys:
             file_id = await photo_db.get_photo_id(photo_key)
@@ -120,7 +121,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                             if key == photo_key:
                                 display_name = name
                                 break
-                
+
                 await bot.send_photo(
                     chat_id=chat_id,
                     photo=file_id,
@@ -129,7 +130,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                 )
                 sent_count += 1
                 await asyncio.sleep(0.5)  # Задержка между отправками
-        
+
         if sent_count == 0:
             await bot.send_message(
                 chat_id,
@@ -137,7 +138,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                 "Администратор еще не загрузил фотографии для этих продуктов.",
                 reply_markup=final_menu_keyboard()
             )
-    
+
     except Exception as e:
         logger.error(f"❌ Ошибка при отправке фото: {e}")
         await bot.send_message(
@@ -222,7 +223,7 @@ async def check_db_middleware(handler, event, data):
     if not photo_db.is_connected:
         logger.warning("⚠️ БД не подключена, пытаемся переподключиться...")
         await photo_db.init_db()
-    
+
     return await handler(event, data)
 
 # ==================== КОМАНДЫ БОТА ====================
@@ -377,7 +378,7 @@ async def process_new_selection(message: Message, state: FSMContext):
     """Начать новую подборку"""
     await state.clear()
     clear_selected_problems(message.from_user.id)
-    
+
     await message.answer(
         "🔄 <b>Начинаем новую подборку!</b>\n\n"
         "<i>Выберите категорию:</i>",
@@ -783,7 +784,7 @@ async def process_admin_photo(message: Message, state: FSMContext):
         category = data.get("admin_category")
         subcategory = data.get("admin_subcategory")
         display_name = data.get("admin_display_name")
-        
+
         # Проверяем, что все данные есть
         if not all([product_key, category, subcategory, display_name]):
             await message.answer("❌ Ошибка: данные продукта не найдены.")
@@ -793,11 +794,11 @@ async def process_admin_photo(message: Message, state: FSMContext):
                 reply_markup=keyboards.admin_category_keyboard()
             )
             return
-        
+
         # Получаем file_id
         photo = message.photo[-1]
         file_id = photo.file_id
-        
+
         # Сохраняем в базу
         success = await photo_db.save_photo(
             product_key=product_key,
@@ -806,11 +807,11 @@ async def process_admin_photo(message: Message, state: FSMContext):
             display_name=display_name,
             file_id=file_id
         )
-        
+
         if success:
             # Получаем текущее количество фото
             photo_count = await photo_db.count_photos()
-            
+
             await message.answer(
                 f"✅ <b>Фото успешно загружено!</b>\n\n"
                 f"<b>Продукт:</b> {display_name}\n"
@@ -832,9 +833,9 @@ async def process_admin_photo(message: Message, state: FSMContext):
                 parse_mode=ParseMode.HTML,
                 reply_markup=keyboards.admin_category_keyboard()
             )
-        
+
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
-        
+
     except Exception as e:
         logger.error(f"❌ Ошибка при обработке фото админа: {e}", exc_info=True)
         await message.answer(
@@ -903,7 +904,7 @@ async def on_startup():
     else:
         photo_count = await photo_db.count_photos()
         logger.info(f"📊 Фото в базе: {photo_count}")
-    
+
     # Запуск health check сервера
     if KEEP_ALIVE_AVAILABLE:
         keep_alive()
