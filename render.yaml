@@ -15,3 +15,4 @@ services:
         value: "admin2026"
     autoDeploy: true
     healthCheckPath: /health
+    healthCheckTimeout: 180
