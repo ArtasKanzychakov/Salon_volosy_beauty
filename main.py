@@ -3,7 +3,7 @@ import logging
 import asyncio
 import aiohttp
 from datetime import datetime
-from typing import List, Optional
+from typing import List
 import schedule
 import time
 from threading import Thread
@@ -21,7 +21,15 @@ from dotenv import load_dotenv
 import photo_database
 from states import UserState, AdminState
 from user_storage import user_data_storage
-from keep_alive import keep_alive
+
+# --- Начало нового кода: обработка импорта keep_alive ---
+try:
+    from keep_alive import keep_alive
+    KEEP_ALIVE_AVAILABLE = True
+except ImportError:
+    KEEP_ALIVE_AVAILABLE = False
+    print("⚠️ Модуль keep_alive не найден. Health check не будет работать.")
+# --- Конец нового кода ---
 
 # Загрузка переменных окружения
 load_dotenv()
@@ -881,7 +889,7 @@ async def process_stats(message: Message):
         logger.error(f"Ошибка при получении статистики: {e}")
         await message.answer("❌ Ошибка при получении статистики.")
 
-@dp.message(AdminState.MAIN_MENU, F.text == "👀 Просмотреть базу")
+@dp.message(AdminState.MAIN_MЕНЮ, F.text == "👀 Просмотреть базу")
 async def process_view_database(message: Message):
     """Просмотр всей базы данных"""
     try:
@@ -1059,8 +1067,11 @@ async def on_startup():
     logger.info("🗄️ База данных инициализирована")
     
     # Запуск health check сервера
-    keep_alive()
-    logger.info("🌐 Health check сервер запущен")
+    if KEEP_ALIVE_AVAILABLE:
+        keep_alive()
+        logger.info("🌐 Health check сервер запущен")
+    else:
+        logger.warning("⚠️ Health check сервер не запущен (модуль keep_alive недоступен)")
     
     # Запуск self-ping в отдельном потоке
     scheduler_thread = Thread(target=run_scheduler, daemon=True)
