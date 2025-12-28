@@ -3,7 +3,6 @@ USER_STORAGE.PY - Хранилище данных пользователей
 """
 
 from typing import Dict, Any
-from datetime import datetime
 
 # Простое хранилище в памяти
 user_data = {}
@@ -33,7 +32,7 @@ def add_selected_problem(user_id: int, problem: str):
         user_data[user_id] = {}
     if "selected_problems" not in user_data[user_id]:
         user_data[user_id]["selected_problems"] = []
-    
+
     if problem not in user_data[user_id]["selected_problems"]:
         user_data[user_id]["selected_problems"].append(problem)
 
@@ -54,7 +53,6 @@ def clear_selected_problems(user_id: int):
     if user_id in user_data and "selected_problems" in user_data[user_id]:
         user_data[user_id]["selected_problems"] = []
 
-# Для совместимости со старым кодом
 def get_user_data_value(user_id: int, key: str, default: Any = None) -> Any:
     """Алиас для get_user_data с ключом"""
     return get_user_data(user_id, key) or default
@@ -63,14 +61,14 @@ class UserDataStorage:
     """Класс для совместимости"""
     def __init__(self):
         pass
-    
+
     def get_data(self, user_id: int):
         return get_user_data(user_id)
-    
+
     def update_data(self, user_id: int, data: dict):
         for key, value in data.items():
             save_user_data(user_id, key, value)
-    
+
     def clear_data(self, user_id: int):
         delete_user_data(user_id)
 
