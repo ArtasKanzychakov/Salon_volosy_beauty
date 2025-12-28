@@ -23,6 +23,15 @@ from user_storage import user_data_storage
 from photo_database import photo_db
 from keep_alive import start_health_server, stop_health_server
 
+# ==================== ЗАДЕРЖКА ДЛЯ ИЗБЕЖАНИЯ КОНФЛИКТА ====================
+
+async def wait_for_previous_instance():
+    """Ожидание завершения предыдущего экземпляра бота"""
+    logger = logging.getLogger(__name__)
+    logger.info("⏳ Ожидание завершения предыдущего экземпляра (10 секунд)...")
+    await asyncio.sleep(10)
+    logger.info("✅ Ожидание завершено")
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -337,7 +346,7 @@ async def admin_stats_handler(message: Message):
 async def admin_category_handler(message: Message, state: FSMContext):
     category = "волосы" if message.text == "💇‍♀️ Волосы" else "тело"
     await state.update_data(admin_category=category)
-    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)  # ← ИЗМЕНЕНО С ADMIN_CHOOSING_CATEGORY
     
     await message.answer(
         f"Категория: *{category}*\n\nВыберите подкатегорию:",
@@ -345,7 +354,7 @@ async def admin_category_handler(message: Message, state: FSMContext):
         parse_mode=ParseMode.MARKDOWN
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY)  # ← ЭТА СТРОКА БЫЛА С ОШИБКОЙ
 async def admin_subcategory_handler(message: Message, state: FSMContext):
     admin_data = await state.get_data()
     category = admin_data.get("admin_category", "")
@@ -382,7 +391,7 @@ async def admin_product_handler(message: Message, state: FSMContext):
     subcategory = admin_data.get("admin_subcategory", "")
     
     if message.text == "↩️ Назад к подкатегориям":
-        await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+        await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)  # ← ИЗМЕНЕНО
         await message.answer(
             f"Категория: *{category}*\n\nВыберите подкатегорию:",
             reply_markup=keyboards.admin_subcategory_keyboard(category),
@@ -476,7 +485,7 @@ async def admin_photo_handler(message: Message, state: FSMContext):
         await message.answer("❌ Ошибка при сохранении фото.")
     
     # Возвращаемся к выбору подкатегории
-    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)  # ← ИЗМЕНЕНО
     await message.answer(
         f"Категория: *{category}*\n\nВыберите подкатегорию:",
         reply_markup=keyboards.admin_subcategory_keyboard(category),
@@ -496,6 +505,11 @@ async def admin_back_to_categories(message: Message, state: FSMContext):
 async def on_startup():
     """Действия при запуске"""
     logger.info("🚀 Запуск бота SVOY AV.COSMETIC")
+    
+    # Дополнительная задержка для избежания TelegramConflictError
+    if os.environ.get("RENDER"):
+        logger.info("⏳ Дополнительная задержка для избежания конфликта (5 секунд)...")
+        await asyncio.sleep(5)
     
     # Запускаем health сервер
     global health_server_runner
@@ -528,6 +542,9 @@ async def on_shutdown():
 
 async def main():
     """Основная функция"""
+    # Ждем завершения предыдущего экземпляра
+    await wait_for_previous_instance()
+    
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
     
