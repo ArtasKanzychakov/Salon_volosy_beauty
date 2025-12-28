@@ -36,16 +36,17 @@ class PhotoDatabase:
                 command_timeout=60
             )
             
-            # Создаем таблицу
+            # Создаем таблицу для фото
             async with self.pool.acquire() as conn:
                 await conn.execute('''
                     CREATE TABLE IF NOT EXISTS product_photos (
                         id SERIAL PRIMARY KEY,
-                        product_key VARCHAR(100) NOT NULL,
+                        product_key VARCHAR(100) NOT NULL UNIQUE,
                         category VARCHAR(50) NOT NULL,
+                        subcategory VARCHAR(100) NOT NULL,
+                        display_name VARCHAR(200) NOT NULL,
                         file_id TEXT NOT NULL,
-                        uploaded_at TIMESTAMP DEFAULT NOW(),
-                        UNIQUE(product_key)
+                        uploaded_at TIMESTAMP DEFAULT NOW()
                     )
                 ''')
             
@@ -57,26 +58,26 @@ class PhotoDatabase:
             logger.error(f"❌ Ошибка подключения к базе данных: {e}")
             return False
     
-    async def save_photo(self, product_key: str, file_id: str) -> bool:
+    async def save_photo(self, product_key: str, category: str, 
+                        subcategory: str, display_name: str, 
+                        file_id: str) -> bool:
         """Сохранение фото в базу данных"""
         if not self.is_connected:
             return False
         
         try:
             async with self.pool.acquire() as conn:
-                # Определяем категорию по ключу
-                category = "волосы"
-                if product_key.startswith("body_"):
-                    category = "тело"
-                
                 await conn.execute('''
-                    INSERT INTO product_photos (product_key, category, file_id)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO product_photos 
+                    (product_key, category, subcategory, display_name, file_id)
+                    VALUES ($1, $2, $3, $4, $5)
                     ON CONFLICT (product_key) 
-                    DO UPDATE SET file_id = EXCLUDED.file_id
-                ''', product_key, category, file_id)
+                    DO UPDATE SET 
+                        file_id = EXCLUDED.file_id,
+                        uploaded_at = NOW()
+                ''', product_key, category, subcategory, display_name, file_id)
             
-            logger.info(f"✅ Фото сохранено: {product_key}")
+            logger.info(f"✅ Фото сохранено: {display_name} ({product_key})")
             return True
             
         except Exception as e:
@@ -132,6 +133,41 @@ class PhotoDatabase:
         except Exception as e:
             logger.error(f"❌ Ошибка подсчета фото: {e}")
             return 0
+    
+    async def get_photos_by_category(self, category: str) -> List[Dict[str, Any]]:
+        """Получение фото по категории"""
+        if not self.is_connected:
+            return []
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    'SELECT product_key, display_name, subcategory FROM product_photos WHERE category = $1 ORDER BY display_name',
+                    category
+                )
+            
+            return [dict(row) for row in rows]
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения фото по категории: {e}")
+            return []
+    
+    async def get_all_photos(self) -> List[Dict[str, Any]]:
+        """Получение всех фото из базы"""
+        if not self.is_connected:
+            return []
+        
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    'SELECT product_key, category, subcategory, display_name, uploaded_at FROM product_photos ORDER BY category, display_name'
+                )
+            
+            return [dict(row) for row in rows]
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения всех фото: {e}")
+            return []
     
     async def close(self):
         """Закрытие соединения с базой данных"""
