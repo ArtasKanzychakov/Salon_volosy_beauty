@@ -7,6 +7,7 @@ import logging
 import sys
 import os
 from typing import List
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -103,13 +104,8 @@ async def body_handler(message: Message, state: FSMContext):
 async def body_goal_handler(message: Message, state: FSMContext):
     goal = message.text
     
-    # Маппинг целей на ключи фото
-    photo_mapping = {
-        "Общий уход": "body_general",
-        "Сухая кожа": "body_dry",
-        "Чувствительная и склонная к раздражениям": "body_sensitive",
-        "Борьба с целлюлитом и тонизирование": "body_cellulite"
-    }
+    # Получаем ключи фото для этой цели
+    photo_keys = config.PHOTO_MAPPING["тело"].get(goal, [])
     
     # Получаем рекомендации
     recommendations = config.get_body_recommendations(goal)
@@ -118,13 +114,14 @@ async def body_goal_handler(message: Message, state: FSMContext):
     await message.answer(f"🎯 **{goal}**\n\n{recommendations}", parse_mode=ParseMode.MARKDOWN)
     
     # Отправляем фото
-    photo_key = photo_mapping.get(goal)
-    if photo_key:
+    if photo_keys:
         await send_photo_group(
             chat_id=message.chat.id,
-            photo_keys=[photo_key],
+            photo_keys=photo_keys,
             caption="📦 Рекомендуемые продукты:"
         )
+    else:
+        await message.answer("📷 Фото продуктов скоро будут доступны!")
     
     # Информация о точках продаж
     await message.answer(config.SALES_POINTS, parse_mode=ParseMode.MARKDOWN)
@@ -149,7 +146,7 @@ async def hair_type_handler(message: Message, state: FSMContext):
     
     await state.set_state(UserState.HAIR_CHOOSING_PROBLEMS)
     await message.answer(
-        "Выберите проблемы волос (можно несколько):",
+        "Выберите проблемы волос (можно несколько, но необязательно):",
         reply_markup=keyboards.hair_problems_keyboard()
     )
 
@@ -158,11 +155,7 @@ async def hair_problems_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
     
     if message.text == "✅ Готово":
-        selected = user_data_storage.get_data(user_id).get("hair_problems", [])
-        if not selected:
-            await message.answer("Пожалуйста, выберите хотя бы одну проблему.")
-            return
-        
+        # Разрешаем переход даже если ничего не выбрано
         await state.set_state(UserState.HAIR_CHOOSING_SCALP)
         await message.answer(
             "Есть ли чувствительность кожи головы?",
@@ -182,7 +175,7 @@ async def hair_problems_handler(message: Message, state: FSMContext):
         user_data_storage.update_data(user_id, {"hair_problems": current})
         
         await message.answer(
-            f"Выбрано: {len(current)} проблем\nВыберите проблемы:",
+            f"Выбрано: {len(current)} проблем\nВыберите проблемы (или нажмите 'Готово'):",
             reply_markup=keyboards.hair_problems_keyboard(current)
         )
 
@@ -220,11 +213,13 @@ async def hair_color_handler(message: Message, state: FSMContext):
     hair_type = user_data.get("hair_type", "")
     
     valid_colors = config.get_hair_colors(hair_type)
-    if message.text not in valid_colors:
+    if message.text not in valid_colors and message.text != "🏠 Главное меню":
         await message.answer("Пожалуйста, выберите цвет из списка.")
         return
     
-    user_data_storage.update_data(user_id, {"hair_color": message.text})
+    if message.text != "🏠 Главное меню":
+        user_data_storage.update_data(user_id, {"hair_color": message.text})
+    
     await generate_hair_result(message, state)
 
 async def generate_hair_result(message: Message, state: FSMContext):
@@ -242,44 +237,38 @@ async def generate_hair_result(message: Message, state: FSMContext):
         hair_type, problems, scalp_type, hair_volume, hair_color
     )
     
-    # Маппинг для фото
+    # Собираем ключи фото
     photo_keys = []
     
-    # Базовые фото
-    if hair_type == "Окрашенные блондинки":
-        photo_keys.append("hair_blonde_general")
-    elif hair_type == "Окрашенные все остальные":
-        photo_keys.append("hair_colored_general")
-    else:
-        photo_keys.append("hair_natural_general")
+    # Базовый уход по типу волос
+    base_keys = config.PHOTO_MAPPING["волосы"].get(hair_type, [])
+    photo_keys.extend(base_keys)
     
-    # Фото проблем
-    problem_mapping = {
-        "Ломкость": "hair_brittle",
-        "Выпадение": "hair_loss",
-        "Перхоть/зуд": "hair_dandruff",
-        "Секущиеся кончики": "hair_split",
-        "Тусклость": "hair_dull",
-        "Пушистость": "hair_frizzy",
-        "Тонкие": "hair_thin",
-        "Очень поврежденные": "hair_damaged"
-    }
-    
+    # Фото для проблем
     for problem in problems:
-        if problem in problem_mapping:
-            photo_keys.append(problem_mapping[problem])
+        problem_keys = config.PHOTO_MAPPING["волосы"].get(problem, [])
+        photo_keys.extend(problem_keys)
     
-    # Дополнительные фото
+    # Чувствительная кожа головы
     if scalp_type == "Да, чувствительная":
-        photo_keys.append("hair_scalp_sensitive")
+        sensitive_keys = config.PHOTO_MAPPING["волосы"].get("чувствительная_кожа", [])
+        photo_keys.extend(sensitive_keys)
     
+    # Объем
     if hair_volume == "Да, хочу объем":
-        photo_keys.append("hair_volume")
+        volume_keys = config.PHOTO_MAPPING["волосы"].get("объем", [])
+        photo_keys.extend(volume_keys)
     
+    # Цветовые маски
     if hair_color in ["Шатенка", "Русая"]:
-        photo_keys.append("hair_mask_chocolate")
+        mask_keys = config.PHOTO_MAPPING["волосы"].get("оттеночная_шоколад", [])
+        photo_keys.extend(mask_keys)
     elif hair_color == "Рыжая":
-        photo_keys.append("hair_mask_copper")
+        mask_keys = config.PHOTO_MAPPING["волосы"].get("оттеночная_медный", [])
+        photo_keys.extend(mask_keys)
+    
+    # Убираем дубликаты
+    photo_keys = list(set(photo_keys))
     
     # Отправляем рекомендации
     await message.answer(recommendations, parse_mode=ParseMode.MARKDOWN)
@@ -291,6 +280,8 @@ async def generate_hair_result(message: Message, state: FSMContext):
             photo_keys=photo_keys,
             caption="📦 Рекомендуемые продукты:"
         )
+    else:
+        await message.answer("📷 Фото продуктов скоро будут доступны!")
     
     # Информация о продажах
     await message.answer(
@@ -311,128 +302,192 @@ async def admin_password_handler(message: Message, state: FSMContext):
     if message.text == config.ADMIN_PASSWORD:
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
         await message.answer(
-            "Доступ разрешен. Выберите категорию:",
+            "Доступ разрешен. Выберите действие:",
             reply_markup=keyboards.admin_category_keyboard()
         )
     else:
         await message.answer("Неверный пароль. Попробуйте снова.")
 
+@dp.message(F.text == "📊 Статистика", AdminState.ADMIN_MAIN_MENU)
+async def admin_stats_handler(message: Message):
+    """Статистика загруженных фото"""
+    all_photos = await photo_db.get_all_photos()
+    
+    if not all_photos:
+        await message.answer("📭 База данных фото пуста.")
+        return
+    
+    # Группируем по категориям
+    stats = {}
+    for photo in all_photos:
+        category = photo.get('category', 'неизвестно')
+        if category not in stats:
+            stats[category] = 0
+        stats[category] += 1
+    
+    stats_text = "📊 *Статистика загруженных фото:*\n\n"
+    for category, count in stats.items():
+        stats_text += f"• {category}: {count} фото\n"
+    
+    stats_text += f"\nВсего: {len(all_photos)} фото"
+    
+    await message.answer(stats_text, parse_mode=ParseMode.MARKDOWN)
+
 @dp.message(F.text.in_(["💇‍♀️ Волосы", "🧴 Тело"]), AdminState.ADMIN_MAIN_MENU)
 async def admin_category_handler(message: Message, state: FSMContext):
     category = "волосы" if message.text == "💇‍♀️ Волосы" else "тело"
     await state.update_data(admin_category=category)
-    await state.set_state(AdminState.ADMIN_CHOOSING_PRODUCT)
-    
-    if category == "волосы":
-        products = [
-            "Общий уход для блондинок",
-            "Общий уход для окрашенных",
-            "Общий уход для натуральных",
-            "Ломкость",
-            "Выпадение",
-            "Перхоть/зуд",
-            "Секущиеся кончики",
-            "Тусклость",
-            "Пушистость",
-            "Тонкие",
-            "Очень поврежденные",
-            "Чувствительная кожа головы",
-            "Объем",
-            "Оттеночная маска Холодный шоколад",
-            "Оттеночная маска Медный"
-        ]
-    else:
-        products = [
-            "Общий уход",
-            "Сухая кожа",
-            "Чувствительная кожа",
-            "Борьба с целлюлитом"
-        ]
+    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
     
     await message.answer(
-        f"Категория: {category}\nВыберите продукт:",
-        reply_markup=keyboards.admin_products_keyboard(products)
+        f"Категория: *{category}*\n\nВыберите подкатегорию:",
+        reply_markup=keyboards.admin_subcategory_keyboard(category),
+        parse_mode=ParseMode.MARKDOWN
+    )
+
+@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+async def admin_subcategory_handler(message: Message, state: FSMContext):
+    admin_data = await state.get_data()
+    category = admin_data.get("admin_category", "")
+    
+    if message.text == "↩️ Назад к категориям":
+        await state.set_state(AdminState.ADMIN_MAIN_MENU)
+        await message.answer(
+            "Выберите действие:",
+            reply_markup=keyboards.admin_category_keyboard()
+        )
+        return
+    
+    # Проверяем, что выбранная подкатегория существует
+    valid_subcategories = list(config.PHOTO_STRUCTURE[category].keys())
+    if message.text not in valid_subcategories:
+        await message.answer("Пожалуйста, выберите подкатегорию из списка.")
+        return
+    
+    await state.update_data(admin_subcategory=message.text)
+    await state.set_state(AdminState.ADMIN_CHOOSING_PRODUCT)
+    
+    await message.answer(
+        f"Категория: *{category}*\n"
+        f"Подкатегория: *{message.text}*\n\n"
+        f"Выберите продукт для загрузки фото:",
+        reply_markup=keyboards.admin_products_keyboard(category, message.text),
+        parse_mode=ParseMode.MARKDOWN
     )
 
 @dp.message(AdminState.ADMIN_CHOOSING_PRODUCT)
 async def admin_product_handler(message: Message, state: FSMContext):
-    product = message.text
     admin_data = await state.get_data()
     category = admin_data.get("admin_category", "")
+    subcategory = admin_data.get("admin_subcategory", "")
     
-    # Маппинг названий на ключи
-    product_mapping = {
-        "волосы": {
-            "Общий уход для блондинок": "hair_blonde_general",
-            "Общий уход для окрашенных": "hair_colored_general",
-            "Общий уход для натуральных": "hair_natural_general",
-            "Ломкость": "hair_brittle",
-            "Выпадение": "hair_loss",
-            "Перхоть/зуд": "hair_dandruff",
-            "Секущиеся кончики": "hair_split",
-            "Тусклость": "hair_dull",
-            "Пушистость": "hair_frizzy",
-            "Тонкие": "hair_thin",
-            "Очень поврежденные": "hair_damaged",
-            "Чувствительная кожа головы": "hair_scalp_sensitive",
-            "Объем": "hair_volume",
-            "Оттеночная маска Холодный шоколад": "hair_mask_chocolate",
-            "Оттеночная маска Медный": "hair_mask_copper"
-        },
-        "тело": {
-            "Общий уход": "body_general",
-            "Сухая кожа": "body_dry",
-            "Чувствительная кожа": "body_sensitive",
-            "Борьба с целлюлитом": "body_cellulite"
-        }
-    }
-    
-    product_key = product_mapping.get(category, {}).get(product)
-    
-    if not product_key:
-        await message.answer("Неизвестный продукт. Выберите из списка.")
+    if message.text == "↩️ Назад к подкатегориям":
+        await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+        await message.answer(
+            f"Категория: *{category}*\n\nВыберите подкатегорию:",
+            reply_markup=keyboards.admin_subcategory_keyboard(category),
+            parse_mode=ParseMode.MARKDOWN
+        )
         return
     
-    await state.update_data(admin_product=product_key)
+    # Ищем продукт по display_name
+    products = config.PHOTO_STRUCTURE[category][subcategory]
+    product_info = None
+    
+    for product_key, display_name in products:
+        if display_name == message.text:
+            product_info = (product_key, display_name)
+            break
+    
+    if not product_info:
+        await message.answer("Продукт не найден. Выберите из списка.")
+        return
+    
+    product_key, display_name = product_info
+    
+    await state.update_data(
+        admin_product_key=product_key,
+        admin_display_name=display_name
+    )
     await state.set_state(AdminState.ADMIN_WAITING_PHOTO)
     
-    await message.answer(
-        f"Продукт: {product}\nКлюч: {product_key}\n\n"
-        f"Отправьте фото для этого продукта:"
-    )
+    # Проверяем, есть ли уже фото для этого продукта
+    existing_photo = await photo_db.get_photo_id(product_key)
+    
+    if existing_photo:
+        await message.answer(
+            f"🔄 *Обновление фото*\n\n"
+            f"• Продукт: {display_name}\n"
+            f"• Ключ: `{product_key}`\n"
+            f"• Категория: {category}\n"
+            f"• Подкатегория: {subcategory}\n\n"
+            f"У этого продукта уже есть загруженное фото.\n"
+            f"Отправьте новое фото для замены:",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        await message.answer(
+            f"📤 *Загрузка нового фото*\n\n"
+            f"• Продукт: {display_name}\n"
+            f"• Ключ: `{product_key}`\n"
+            f"• Категория: {category}\n"
+            f"• Подкатегория: {subcategory}\n\n"
+            f"Отправьте фото для этого продукта:",
+            parse_mode=ParseMode.MARKDOWN
+        )
 
 @dp.message(F.content_type == ContentType.PHOTO, AdminState.ADMIN_WAITING_PHOTO)
 async def admin_photo_handler(message: Message, state: FSMContext):
     admin_data = await state.get_data()
-    product_key = admin_data.get("admin_product", "")
+    product_key = admin_data.get("admin_product_key", "")
+    category = admin_data.get("admin_category", "")
+    subcategory = admin_data.get("admin_subcategory", "")
+    display_name = admin_data.get("admin_display_name", "")
     
     if not product_key:
-        await message.answer("Ошибка: не выбран продукт.")
+        await message.answer("❌ Ошибка: не выбран продукт.")
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
         return
     
+    # Получаем самое большое фото
     photo = message.photo[-1]
     file_id = photo.file_id
     
-    success = await photo_db.save_photo(product_key, file_id)
+    # Сохраняем в базу данных
+    success = await photo_db.save_photo(
+        product_key=product_key,
+        category=category,
+        subcategory=subcategory,
+        display_name=display_name,
+        file_id=file_id
+    )
     
     if success:
-        await message.answer(f"✅ Фото для '{product_key}' успешно сохранено!")
+        await message.answer(
+            f"✅ *Фото успешно сохранено!*\n\n"
+            f"• Продукт: {display_name}\n"
+            f"• Ключ: `{product_key}`\n"
+            f"• Категория: {category}\n"
+            f"• Подкатегория: {subcategory}\n"
+            f"• File ID: `{file_id[:30]}...`",
+            parse_mode=ParseMode.MARKDOWN
+        )
     else:
-        await message.answer(f"❌ Ошибка при сохранении фото для '{product_key}'")
+        await message.answer("❌ Ошибка при сохранении фото.")
     
-    # Возвращаемся к выбору категории
-    await state.set_state(AdminState.ADMIN_MAIN_MENU)
+    # Возвращаемся к выбору подкатегории
+    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
     await message.answer(
-        "Выберите категорию:",
-        reply_markup=keyboards.admin_category_keyboard()
+        f"Категория: *{category}*\n\nВыберите подкатегорию:",
+        reply_markup=keyboards.admin_subcategory_keyboard(category),
+        parse_mode=ParseMode.MARKDOWN
     )
 
-@dp.message(F.text == "↩️ Назад к категориям", AdminState.ADMIN_CHOOSING_PRODUCT)
+@dp.message(F.text == "↩️ Назад к категориям", AdminState.ADMIN_CHOOSING_SUBCATEGORY)
 async def admin_back_to_categories(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_MAIN_MENU)
     await message.answer(
-        "Выберите категорию:",
+        "Выберите действие:",
         reply_markup=keyboards.admin_category_keyboard()
     )
 
