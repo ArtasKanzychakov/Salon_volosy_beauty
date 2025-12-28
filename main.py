@@ -58,9 +58,6 @@ bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseM
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Глобальная переменная для self-ping
-APP_URL = None
-
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 def new_selection_keyboard() -> ReplyKeyboardMarkup:
@@ -846,40 +843,6 @@ async def process_admin_cancel_photo(message: Message, state: FSMContext):
         reply_markup=keyboards.admin_category_keyboard()
     )
 
-# ==================== SELF-PING SYSTEM ====================
-
-async def self_ping():
-    """Функция для self-ping приложения"""
-    global APP_URL
-
-    if not APP_URL:
-        # Пытаемся получить URL из переменных окружения Render
-        render_url = os.getenv("RENDER_EXTERNAL_URL")
-        if render_url:
-            APP_URL = f"{render_url}/health"
-        else:
-            logger.warning("⚠️ RENDER_EXTERNAL_URL не установлен, self-ping не работает")
-            return
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(APP_URL, timeout=10) as response:
-                if response.status == 200:
-                    logger.info(f"✅ Self-ping успешен: {APP_URL}")
-                else:
-                    logger.warning(f"⚠️ Self-ping вернул статус {response.status}: {APP_URL}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка self-ping: {e}")
-
-def run_scheduler():
-    """Запуск планировщика для self-ping"""
-    # Запускаем пинг каждые 5 минут
-    schedule.every(5).minutes.do(lambda: asyncio.run(self_ping()))
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
 # ==================== ЗАПУСК БОТА ====================
 
 async def on_startup():
@@ -889,22 +852,13 @@ async def on_startup():
     # Инициализация базы данных
     db_connected = await photo_db.init_db()
     logger.info(f"📊 Статус подключения к БД: {db_connected}")
-    
     if db_connected:
-        # Проверяем структуру таблицы
-        await photo_db.check_table_structure()
-        
         photo_count = await photo_db.count_photos()
         logger.info(f"📸 Фото в базе: {photo_count}")
 
     # Запуск health check сервера
     config.keep_alive()
     logger.info("🌐 Health check сервер запущен")
-
-    # Запуск self-ping в отдельном потоке
-    scheduler_thread = Thread(target=run_scheduler, daemon=True)
-    scheduler_thread.start()
-    logger.info("🔔 Self-ping система запущена")
 
     # Установка webhook или опроса
     await bot.delete_webhook(drop_pending_updates=True)
