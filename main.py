@@ -31,6 +31,17 @@ except ImportError:
     HAS_DATA_MODULES = False
     print("⚠️ Модули body_data.py и/или hair_data.py не найдены")
 
+# Импорт user_storage
+from user_storage import (
+    save_user_data,
+    get_user_data_value,
+    add_selected_problem,
+    remove_selected_problem,
+    get_selected_problems,
+    clear_selected_problems,
+    delete_user_data
+)
+
 # Импорт keep_alive
 try:
     from keep_alive import keep_alive
@@ -175,11 +186,13 @@ async def cmd_start(message: Message, state: FSMContext):
     """Обработчик команды /start"""
     try:
         await state.clear()
+        delete_user_data(message.from_user.id)
+        
         welcome_text = (
             "👋 *Добро пожаловать в SVOY AV.COSMETIC!*\n\n"
             "Я помогу подобрать идеальную косметику для:\n"
             "💇‍♀️ *Волос* — подбор по типу, проблемам и цвету\n"
-            "🧴 *Тела* — уход по потребностям кожи\n\n"
+            "🧴 *Тело* — уход по потребностям кожи\n\n"
             "Выберите категорию:"
         )
         
@@ -250,6 +263,35 @@ async def cmd_status(message: Message):
         logger.error(f"Ошибка в cmd_status: {e}")
         await message.answer("❌ Ошибка при получении статуса")
 
+@dp.message(Command("dbcheck"))
+async def cmd_dbcheck(message: Message):
+    """Проверка состояния базы данных"""
+    try:
+        db_connected = photo_db.is_connected
+        photo_count = await photo_db.count_photos()
+        all_photos = await photo_db.get_all_photos()
+        
+        check_text = (
+            "🔍 *Проверка базы данных*\n\n"
+            f"• Подключена: {'✅' if db_connected else '❌'}\n"
+            f"• Всего фото: {photo_count}\n\n"
+            "*Последние записи:*\n"
+        )
+        
+        if all_photos:
+            for i, photo in enumerate(all_photos[:5], 1):
+                check_text += f"{i}. {photo.get('product_key', 'N/A')} - {photo.get('display_name', 'N/A')}\n"
+            if len(all_photos) > 5:
+                check_text += f"... и еще {len(all_photos) - 5} записей\n"
+        else:
+            check_text += "• Таблица пуста\n"
+        
+        await message.answer(check_text, parse_mode=ParseMode.MARKDOWN)
+        
+    except Exception as e:
+        logger.error(f"Ошибка проверки БД: {e}")
+        await message.answer(f"❌ Ошибка: {str(e)[:100]}")
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
     """Доступ к админ-панели"""
@@ -267,6 +309,8 @@ async def cmd_admin(message: Message, state: FSMContext):
 async def process_main_menu(message: Message, state: FSMContext):
     """Возврат в главное меню"""
     await state.clear()
+    clear_selected_problems(message.from_user.id)
+    
     welcome_text = (
         "👋 *Добро пожаловать в SVOY AV.COSMETIC!*\n\n"
         "Выберите категорию:"
@@ -281,6 +325,7 @@ async def process_main_menu(message: Message, state: FSMContext):
 @dp.message(UserState.CHOOSING_CATEGORY, F.text == "💇‍♀️ Волосы")
 async def process_hair_category(message: Message, state: FSMContext):
     """Выбрана категория 'Волосы'"""
+    clear_selected_problems(message.from_user.id)
     await state.set_state(UserState.HAIR_CHOOSING_TYPE)
     await message.answer(
         "💇‍♀️ *Отлично! Подберем уход для волос.*\n\n"
@@ -307,6 +352,7 @@ async def process_body_goal(message: Message, state: FSMContext):
     """Обработка цели ухода за телом"""
     try:
         goal = message.text
+        save_user_data(message.from_user.id, "body_goal", goal)
         
         # Получаем рекомендации и фото
         recommendations, photo_keys = await get_body_recommendations_with_photos(goal)
@@ -357,9 +403,6 @@ async def process_body_goal(message: Message, state: FSMContext):
 async def process_hair_type(message: Message, state: FSMContext):
     """Обработка типа волос"""
     hair_type = message.text
-    
-    # Сохраняем данные
-    from user_storage import save_user_data
     save_user_data(message.from_user.id, "hair_type", hair_type)
     
     # Если окрашенные блондинки - сразу переходим к проблемам
@@ -385,12 +428,17 @@ async def process_hair_type(message: Message, state: FSMContext):
 @dp.message(UserState.HAIR_CHOOSING_PROBLEMS)
 async def process_hair_problems(message: Message, state: FSMContext):
     """Обработка выбора проблем волос"""
-    from user_storage import add_selected_problem, remove_selected_problem, get_selected_problems
+    logger.info(f"Обработка проблем: '{message.text}'")
     
     if message.text == "✅ Готово":
         selected_problems = get_selected_problems(message.from_user.id)
+        logger.info(f"Выбрано проблем: {selected_problems}")
+        
         if not selected_problems:
-            await message.answer("❌ Пожалуйста, выберите хотя бы одну проблему.")
+            await message.answer(
+                "❌ Пожалуйста, выберите хотя бы одну проблему.",
+                reply_markup=keyboards.hair_problems_keyboard([])
+            )
             return
         
         await state.set_state(UserState.HAIR_CHOOSING_SCALP)
@@ -399,14 +447,23 @@ async def process_hair_problems(message: Message, state: FSMContext):
             reply_markup=keyboards.scalp_type_keyboard()
         )
     
-    elif message.text in config.HAIR_PROBLEMS:
+    elif message.text.startswith("☐ ") or message.text.startswith("✅ "):
         problem = message.text.replace("✅ ", "").replace("☐ ", "")
         
+        # Проверяем, есть ли такая проблема в списке
+        if problem not in config.HAIR_PROBLEMS:
+            logger.warning(f"Неизвестная проблема: {problem}")
+            return
+        
         # Переключаем выбор
-        if problem in get_selected_problems(message.from_user.id):
+        current_problems = get_selected_problems(message.from_user.id)
+        
+        if problem in current_problems:
             remove_selected_problem(message.from_user.id, problem)
+            logger.info(f"Убрана проблема: {problem}")
         else:
             add_selected_problem(message.from_user.id, problem)
+            logger.info(f"Добавлена проблема: {problem}")
         
         # Обновляем клавиатуру
         await message.answer(
@@ -415,14 +472,16 @@ async def process_hair_problems(message: Message, state: FSMContext):
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=keyboards.hair_problems_keyboard(get_selected_problems(message.from_user.id))
         )
+    
+    elif message.text == "🏠 Главное меню":
+        clear_selected_problems(message.from_user.id)
+        await state.clear()
+        await process_main_menu(message, state)
 
 @dp.message(UserState.HAIR_CHOOSING_SCALP, F.text.in_(config.SCALP_TYPES))
 async def process_scalp_type(message: Message, state: FSMContext):
     """Обработка типа кожи головы"""
     scalp_type = message.text
-    
-    # Сохраняем данные
-    from user_storage import save_user_data
     save_user_data(message.from_user.id, "scalp_type", scalp_type)
     
     await state.set_state(UserState.HAIR_CHOOSING_VOLUME)
@@ -435,17 +494,13 @@ async def process_scalp_type(message: Message, state: FSMContext):
 async def process_hair_volume(message: Message, state: FSMContext):
     """Обработка желания добавить объем"""
     hair_volume = message.text
-    
-    # Сохраняем данные
-    from user_storage import save_user_data
     save_user_data(message.from_user.id, "hair_volume", hair_volume)
     
     # Проверяем тип волос для определения необходимости выбора цвета
-    hair_type = save_user_data(message.from_user.id, "hair_type")
+    hair_type = get_user_data_value(message.from_user.id, "hair_type", "")
     
     if hair_type in ["Окрашенные блондинки", "Окрашенные все остальные"]:
         await state.set_state(UserState.HAIR_CHOOSING_COLOR)
-        colors = config.get_hair_colors(hair_type)
         await message.answer(
             "Выберите цвет волос:",
             reply_markup=keyboards.hair_color_keyboard(hair_type)
@@ -458,9 +513,6 @@ async def process_hair_volume(message: Message, state: FSMContext):
 async def process_hair_color(message: Message, state: FSMContext):
     """Обработка цвета волос для окрашенных"""
     hair_color = message.text
-    
-    # Сохраняем данные
-    from user_storage import save_user_data
     save_user_data(message.from_user.id, "hair_color", hair_color)
     
     await show_hair_results(message, state)
@@ -468,14 +520,14 @@ async def process_hair_color(message: Message, state: FSMContext):
 async def show_hair_results(message: Message, state: FSMContext):
     """Показать результаты для волос"""
     try:
-        from user_storage import get_selected_problems, save_user_data
-        
         # Получаем все данные
-        hair_type = save_user_data(message.from_user.id, "hair_type")
+        hair_type = get_user_data_value(message.from_user.id, "hair_type", "")
         problems = get_selected_problems(message.from_user.id)
-        scalp_type = save_user_data(message.from_user.id, "scalp_type")
-        hair_volume = save_user_data(message.from_user.id, "hair_volume")
-        hair_color = save_user_data(message.from_user.id, "hair_color", "")
+        scalp_type = get_user_data_value(message.from_user.id, "scalp_type", "")
+        hair_volume = get_user_data_value(message.from_user.id, "hair_volume", "")
+        hair_color = get_user_data_value(message.from_user.id, "hair_color", "")
+        
+        logger.info(f"Данные для рекомендаций: {hair_type}, {problems}, {scalp_type}, {hair_volume}, {hair_color}")
         
         # Получаем рекомендации и фото
         recommendations, photo_keys = await get_hair_recommendations_with_photos(
@@ -511,9 +563,6 @@ async def show_hair_results(message: Message, state: FSMContext):
         
         # Очищаем состояние
         await state.clear()
-        
-        # Очищаем временные данные
-        from user_storage import clear_selected_problems
         clear_selected_problems(message.from_user.id)
         
         logger.info(f"Пользователь {message.from_user.id} получил рекомендации для волос")
@@ -683,6 +732,8 @@ async def process_admin_photo(message: Message, state: FSMContext):
         photo = message.photo[-1]
         file_id = photo.file_id
         
+        logger.info(f"Загрузка фото: {product_key}, {category}, {subcategory}, {display_name}")
+        
         # Сохраняем в базу данных
         success = await photo_db.save_photo(
             product_key=product_key,
@@ -713,9 +764,9 @@ async def process_admin_photo(message: Message, state: FSMContext):
             await state.set_state(AdminState.ADMIN_MAIN_MENU)
             
     except Exception as e:
-        logger.error(f"Ошибка при обработке фото админа: {e}")
+        logger.error(f"Ошибка при обработке фото админа: {e}", exc_info=True)
         await message.answer(
-            "❌ Ошибка при загрузке фото. Попробуйте еще раз.",
+            f"❌ Ошибка при загрузке фото: {str(e)[:100]}",
             reply_markup=keyboards.admin_category_keyboard()
         )
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
@@ -807,11 +858,11 @@ async def main():
         
         logger.info("🚀 Запуск бота...")
         
-        # Запуск поллинга
-        await dp.start_polling(bot, skip_updates=True)
+        # Запуск поллинга с обработкой конфликтов
+        await dp.start_polling(bot, skip_updates=True, allowed_updates=dp.resolve_used_update_types())
         
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}")
+        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
     finally:
         await bot.session.close()
 
@@ -821,4 +872,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Бот остановлен пользователем")
     except Exception as e:
-        logger.error(f"Необработанное исключение: {e}")
+        logger.error(f"Необработанное исключение: {e}", exc_info=True)
