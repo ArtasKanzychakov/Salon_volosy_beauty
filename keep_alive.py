@@ -1,34 +1,32 @@
-"""
-KEEP_ALIVE.PY - Система health check для Render
-"""
-
 import os
-import logging
-from aiohttp import web
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
-logger = logging.getLogger(__name__)
-
-async def health_check(request):
-    """Health check endpoint для Render"""
-    return web.Response(text='OK')
-
-async def start_health_server():
-    """Запуск HTTP сервера для health checks"""
-    app = web.Application()
-    app.router.add_get('/health', health_check)
+class HealthHandler(BaseHTTPRequestHandler):
+    """Обработчик HTTP запросов для health check"""
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_response(404)
+            self.end_headers()
     
-    # Получаем порт из окружения (Render сам задает)
-    port = int(os.environ.get("PORT", 10000))
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    
-    logger.info(f"🌐 Health server запущен на порту {port}")
-    return runner
+    def log_message(self, format, *args):
+        # Отключаем стандартное логирование запросов в консоль
+        pass
 
-async def stop_health_server(runner):
-    """Остановка health сервера"""
-    await runner.cleanup()
-    logger.info("🛑 Health server остановлен")
+def run_health_server():
+    """Запуск HTTP сервера для health check"""
+    port = int(os.environ.get('PORT', 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    print(f"🌐 Health check сервер запущен на порту {port}")
+    server.serve_forever()
+
+def keep_alive():
+    """Запуск health check сервера в отдельном потоке"""
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    print("🔔 Health check система активирована")
