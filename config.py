@@ -50,6 +50,89 @@ def get_hair_colors(hair_type: str):
         return ["Брюнетка", "Шатенка", "Русая", "Рыжая"]
     return []
 
+# ==================== СТРУКТУРА ФОТОГРАФИЙ ====================
+
+# Все фотографии распределены по категориям
+PHOTO_STRUCTURE = {
+    "тело": {
+        "Кремы и масла": [
+            ("cream_body", "Крем для тела"),
+            ("hydrophilic_oil", "Гидрофильное масло"),
+            ("body_butter", "Баттер для тела"),
+            ("body_milk", "Молочко для тела"),
+            ("hualuronic_acid", "Гиалуроновая кислота"),
+        ],
+        "Очищение и скрабы": [
+            ("body_scrub", "Скраб для тела"),
+            ("shower_gel", "Гель для душа"),
+        ]
+    },
+    "волосы": {
+        "Для блондинок": [
+            ("blonde_shampoo", "Шампунь для блондинок"),
+            ("blonde_conditioner", "Кондиционер для блондинок"),
+            ("blonde_mask", "Маска для блондинок"),
+            ("dry_oil_spray", "Сухое масло спрей"),
+            ("mask_pink_powder", "Маска розовая пудра"),
+            ("mask_mother_of_pearl", "Маска перламутр"),
+        ],
+        "Для окрашенных волос": [
+            ("colored_conditioner", "Кондиционер для окрашенных"),
+            ("colored_mask", "Маска для окрашенных"),
+        ],
+        "Масла и эликсиры": [
+            ("oil_elixir", "Масло ELIXIR"),
+            ("oil_concentrate", "Масло концентрат"),
+            ("hair_fluid", "Флюид для волос"),
+        ],
+        "Восстановление": [
+            ("reconstruct_shampoo", "Шампунь реконстракт"),
+            ("reconstruct_mask", "Маска реконстракт"),
+            ("biolipid_spray", "Биолипидный спрей"),
+            ("protein_cream", "Протеиновый крем"),
+        ],
+        "Для ухода": [
+            ("hair_milk", "Молочко для волос"),
+        ],
+        "Оттеночные маски": [
+            ("mask_cold_chocolate", "Маска холодный шоколад"),
+            ("mask_copper", "Маска медный"),
+        ]
+    }
+}
+
+# Маппинг целей на ключи фото
+PHOTO_MAPPING = {
+    "тело": {
+        "Общий уход": ["cream_body", "hydrophilic_oil", "body_scrub", "body_milk", "shower_gel", "hualuronic_acid"],
+        "Сухая кожа": ["body_butter", "hydrophilic_oil", "hualuronic_acid"],
+        "Чувствительная и склонная к раздражениям": ["shower_gel", "body_milk", "hydrophilic_oil", "hualuronic_acid"],
+        "Борьба с целлюлитом и тонизирование": ["shower_gel", "body_scrub", "body_milk", "hualuronic_acid"],
+    },
+    "волосы": {
+        # Общий уход по типам
+        "Окрашенные блондинки": ["blonde_shampoo", "blonde_conditioner", "blonde_mask", "dry_oil_spray"],
+        "Окрашенные все остальные": ["colored_conditioner", "colored_mask"],
+        "Натуральные": [],  # фото для натуральных пока нет
+        
+        # Проблемы
+        "Ломкость": ["oil_elixir", "hair_fluid", "biolipid_spray"],
+        "Выпадение": [],  # фото для выпадения пока нет
+        "Перхоть/зуд": [],  # фото для перхоти пока нет
+        "Секущиеся кончики": ["oil_elixir"],
+        "Тусклость": ["hair_milk", "oil_concentrate"],
+        "Пушистость": ["oil_elixir", "hair_fluid", "protein_cream"],
+        "Тонкие": [],  # фото для тонких волос пока нет
+        "Очень поврежденные": ["oil_elixir", "hair_fluid", "reconstruct_shampoo", "reconstruct_mask", "biolipid_spray"],
+        
+        # Специальные уходы
+        "чувствительная_кожа": [],  # фото для чувствительной кожи головы пока нет
+        "объем": ["biolipid_spray"],
+        "оттеночная_шоколад": ["mask_cold_chocolate"],
+        "оттеночная_медный": ["mask_copper"],
+    }
+}
+
 # ==================== ФУНКЦИИ ДЛЯ РЕКОМЕНДАЦИЙ ====================
 
 def get_body_recommendations(goal: str) -> str:
