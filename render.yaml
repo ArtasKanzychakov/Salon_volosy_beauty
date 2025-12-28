@@ -4,7 +4,9 @@ services:
     env: python
     region: frankfurt
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
     startCommand: python main.py
     envVars:
       - key: BOT_TOKEN
@@ -13,6 +15,13 @@ services:
         value: "postgresql://salon_volosy_photo_bazz_user:Sa0KCOH64FxaJV3Bt7VxRMQRDX4F5L6U@dpg-d56fkmer433s73e4mvog-a/salon_volosy_photo_bazz"
       - key: ADMIN_PASSWORD
         value: "admin2026"
+      - key: RENDER
+        value: true
+      - key: RENDER_EXTERNAL_URL
+        fromService:
+          type: web
+          name: salon-volosy-beauty
+          property: url
     autoDeploy: true
     healthCheckPath: /health
     healthCheckTimeout: 180
