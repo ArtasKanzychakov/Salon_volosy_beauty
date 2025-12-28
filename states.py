@@ -21,5 +21,6 @@ class AdminState(StatesGroup):
     WAITING_PASSWORD = State()
     ADMIN_MAIN_MENU = State()
     ADMIN_CHOOSING_CATEGORY = State()
+    ADMIN_CHOOSING_SUBCATEGORY = State()  # ← ЭТО СОСТОЯНИЕ БЫЛО ОТСУТСТВОВАЛО
     ADMIN_CHOOSING_PRODUCT = State()
     ADMIN_WAITING_PHOTO = State()
