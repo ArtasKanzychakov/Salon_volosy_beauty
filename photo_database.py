@@ -1,5 +1,5 @@
 """
-PHOTO_DATABASE.PY - Исправленная версия
+PHOTO_DATABASE.PY - Работа с PostgreSQL
 """
 
 import os
@@ -10,6 +10,8 @@ from typing import Optional, List, Dict, Any
 logger = logging.getLogger(__name__)
 
 class PhotoDatabase:
+    """Асинхронная база данных для хранения фото"""
+
     def __init__(self):
         self.pool: Optional[asyncpg.Pool] = None
         self.is_connected = False
@@ -115,6 +117,50 @@ class PhotoDatabase:
         except Exception as e:
             logger.error(f"❌ Ошибка подсчета фото: {e}")
             return 0
+
+    async def get_all_photos(self) -> List[Dict[str, Any]]:
+        """Получение всех фото из базы"""
+        if not self.is_connected:
+            return []
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    '''SELECT product_key, category, subcategory, 
+                    display_name, created_at 
+                    FROM product_photos 
+                    ORDER BY category, display_name'''
+                )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения всех фото: {e}")
+            return []
+
+    async def get_photos_by_category(self, category: str) -> List[Dict[str, Any]]:
+        """Получение фото по категории"""
+        if not self.is_connected:
+            return []
+
+        try:
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    '''SELECT product_key, display_name, subcategory 
+                    FROM product_photos 
+                    WHERE category = $1 
+                    ORDER BY display_name''',
+                    category
+                )
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения фото по категории: {e}")
+            return []
+
+    async def close(self):
+        """Закрытие соединения с базой данных"""
+        if self.pool:
+            await self.pool.close()
+            self.is_connected = False
+            logger.info("🔌 Соединение с базой данных закрыто")
 
 # Глобальный экземпляр
 photo_db = PhotoDatabase()
