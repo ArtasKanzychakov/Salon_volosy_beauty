@@ -1,1095 +1,1103 @@
-"""
-MAIN.PY - Основной файл бота для подбора косметики
-"""
-
 import os
-import asyncio
 import logging
-import sys
-import signal
-from typing import List, Dict, Any
+import asyncio
+import aiohttp
 from datetime import datetime
+from typing import List, Optional
+import schedule
+import time
+from threading import Thread
 
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import (
-    Message, CallbackQuery, 
-    ReplyKeyboardMarkup, KeyboardButton, 
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    PhotoSize
-)
-from aiogram.filters import Command, CommandStart
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
-import aiohttp
-from aiohttp import ClientSession, ClientTimeout
+from aiogram.client.default import DefaultBotProperties
+from dotenv import load_dotenv
 
-# Импортируем наши модули
-from photo_database import photo_db
+import photo_database
 from states import UserState, AdminState
-from user_storage import (
-    user_data_storage, save_user_data, get_user_data, 
-    add_selected_problem, get_selected_problems, 
-    clear_selected_problems
-)
-from keep_alive import start_health_server, stop_health_server
+from user_storage import user_data_storage
+from keep_alive import keep_alive
+
+# Загрузка переменных окружения
+load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Конфигурация
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin2026")
-ADMINS = os.environ.get("ADMINS", "").split(",") if os.environ.get("ADMINS") else []
+# Получение переменных окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin2026")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 
 if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN не установлен!")
-    exit(1)
+    raise ValueError("BOT_TOKEN не установлен в переменных окружения")
 
-# Инициализация бота
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+# Инициализация бота и диспетчера
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Роутеры
-user_router = Router()
-admin_router = Router()
-dp.include_router(user_router)
-dp.include_router(admin_router)
+# Глобальная переменная для хранения URL приложения (для self-ping)
+APP_URL = None
 
-# Глобальные переменные для self-ping
-SELF_PING_TASK = None
-SELF_PING_URL = None
+# ==================== КЛАВИАТУРЫ ====================
 
-# =============================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ КЛАВИАТУР
-# =============================================
+def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Главное меню"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💇‍♀️ Для волос"), KeyboardButton(text="💅 Для тела")],
+            [KeyboardButton(text="ℹ️ О боте"), KeyboardButton(text="👑 Админ-панель")]
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выберите опцию..."
+    )
 
-def create_main_keyboard() -> ReplyKeyboardMarkup:
-    """Главное меню для пользователей"""
-    keyboard = [
-        [KeyboardButton(text="💇‍♀️ Для волос"), KeyboardButton(text="💅 Для тела")],
-        [KeyboardButton(text="ℹ️ О боте"), KeyboardButton(text="👑 Админ-панель")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_back_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура с кнопкой 'Назад'"""
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="⬅️ Назад")]],
+        resize_keyboard=True
+    )
 
-def create_hair_type_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для выбора типа волос"""
-    keyboard = [
-        [KeyboardButton(text="👩‍🦰 Сухие"), KeyboardButton(text="👩‍🦱 Нормальные")],
-        [KeyboardButton(text="👩‍🦳 Жирные"), KeyboardButton(text="👩‍🦲 Смешанные")],
-        [KeyboardButton(text="↩️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_yes_no_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура с Да/Нет"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Да"), KeyboardButton(text="❌ Нет")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_hair_problems_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для выбора проблем волос"""
-    keyboard = [
-        [KeyboardButton(text="💔 Выпадение"), KeyboardButton(text="✨ Ломкость")],
-        [KeyboardButton(text="🔥 Секущиеся кончики"), KeyboardButton(text="😴 Тусклость")],
-        [KeyboardButton(text="🔍 Перхоть"), KeyboardButton(text="🎯 Зуд кожи головы")],
-        [KeyboardButton(text="✅ Готово"), KeyboardButton(text="↩️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_hair_type_keyboard() -> ReplyKeyboardMarkup:
+    """Выбор типа волос"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Сухие"), KeyboardButton(text="Нормальные")],
+            [KeyboardButton(text="Жирные"), KeyboardButton(text="Смешанные")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_scalp_type_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для выбора типа кожи головы"""
-    keyboard = [
-        [KeyboardButton(text="🌵 Сухая"), KeyboardButton(text="🌊 Нормальная")],
-        [KeyboardButton(text="💦 Жирная"), KeyboardButton(text="🎭 Чувствительная")],
-        [KeyboardButton(text="↩️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_hair_problems_keyboard() -> ReplyKeyboardMarkup:
+    """Выбор проблем волос (можно выбрать несколько)"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Выпадение"), KeyboardButton(text="Ломкость")],
+            [KeyboardButton(text="Секущиеся кончики"), KeyboardButton(text="Тусклость")],
+            [KeyboardButton(text="Перхоть"), KeyboardButton(text="Зуд")],
+            [KeyboardButton(text="➡️ Далее"), KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_hair_volume_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для выбора объема волос"""
-    keyboard = [
-        [KeyboardButton(text="💁‍♀️ Тонкие"), KeyboardButton(text="👩‍🦱 Средней толщины")],
-        [KeyboardButton(text="👩‍🦰 Густые"), KeyboardButton(text="👑 Очень густые")],
-        [KeyboardButton(text="↩️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_scalp_type_keyboard() -> ReplyKeyboardMarkup:
+    """Выбор типа кожи головы"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Сухая"), KeyboardButton(text="Нормальная")],
+            [KeyboardButton(text="Жирная"), KeyboardButton(text="Чувствительная")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_hair_color_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для выбора цвета волос"""
-    keyboard = [
-        [KeyboardButton(text="👱‍♀️ Русые"), KeyboardButton(text="👩‍🦰 Рыжие")],
-        [KeyboardButton(text="👩‍🦱 Брюнетка"), KeyboardButton(text="👩‍🦳 Блондинка")],
-        [KeyboardButton(text="🎨 Окрашенные"), KeyboardButton(text="🌿 Натуральные")],
-        [KeyboardButton(text="↩️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_hair_volume_keyboard() -> ReplyKeyboardMarkup:
+    """Выбор объема волос"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Тонкие"), KeyboardButton(text="Средней толщины")],
+            [KeyboardButton(text="Густые"), KeyboardButton(text="Очень густые")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_body_goal_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для выбора цели ухода за телом"""
-    keyboard = [
-        [KeyboardButton(text="💦 Увлажнение"), KeyboardButton(text="✨ Питание")],
-        [KeyboardButton(text="🎯 Омоложение"), KeyboardButton(text="🍋 Детокс")],
-        [KeyboardButton(text="🌿 Расслабление"), KeyboardButton(text="🏃‍♀️ Тонус")],
-        [KeyboardButton(text="↩️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_hair_color_keyboard() -> ReplyKeyboardMarkup:
+    """Выбор цвета волос"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Русые"), KeyboardButton(text="Рыжие")],
+            [KeyboardButton(text="Брюнетка"), KeyboardButton(text="Блондинка")],
+            [KeyboardButton(text="Окрашенные"), KeyboardButton(text="Натуральные")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_admin_main_keyboard() -> ReplyKeyboardMarkup:
-    """Главное меню админ-панели"""
-    keyboard = [
-        [KeyboardButton(text="📤 Загрузить фото"), KeyboardButton(text="📊 Статистика")],
-        [KeyboardButton(text="👀 Просмотреть базу"), KeyboardButton(text="🗑️ Удалить фото")],
-        [KeyboardButton(text="🔙 Выйти из админки")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_body_goal_keyboard() -> ReplyKeyboardMarkup:
+    """Выбор цели ухода за телом"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Увлажнение"), KeyboardButton(text="Питание")],
+            [KeyboardButton(text="Омоложение"), KeyboardButton(text="Детокс")],
+            [KeyboardButton(text="Расслабление"), KeyboardButton(text="Тонус")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_admin_categories_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура выбора категории для админа"""
-    keyboard = [
-        [KeyboardButton(text="💇‍♀️ Волосы"), KeyboardButton(text="💅 Тело")],
-        [KeyboardButton(text="🔙 Назад в админ-меню")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_admin_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Меню админ-панели"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📤 Загрузить фото"), KeyboardButton(text="📊 Статистика")],
+            [KeyboardButton(text="👀 Просмотреть базу"), KeyboardButton(text="🗑️ Удалить фото")],
+            [KeyboardButton(text="⬅️ На главную")]
+        ],
+        resize_keyboard=True
+    )
 
-def create_admin_subcategories_keyboard(category: str) -> ReplyKeyboardMarkup:
-    """Клавиатура выбора подкатегории для админа"""
-    subcategories = {
-        "💇‍♀️ Волосы": ["🧴 Шампунь", "🌟 Кондиционер", "🎭 Маска", 
-                      "💧 Сыворотка", "🌿 Масло", "✨ Спрей"],
-        "💅 Тело": ["🚿 Гель для душа", "🧴 Крем для тела", "🧂 Скраб", 
-                   "🌿 Масло для тела", "🛡️ Дезодорант", "👐 Крем для рук"]
-    }
-    
-    keyboard = []
-    for subcat in subcategories.get(category, []):
-        keyboard.append([KeyboardButton(text=subcat)])
-    keyboard.append([KeyboardButton(text="🔙 Назад")])
-    
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+def get_categories_keyboard() -> ReplyKeyboardMarkup:
+    """Выбор категории для загрузки фото"""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="Волосы"), KeyboardButton(text="Тело")],
+            [KeyboardButton(text="⬅️ Назад")]
+        ],
+        resize_keyboard=True
+    )
 
-# =============================================
-# SELF-PING СИСТЕМА (для предотвращения сна)
-# =============================================
+# ==================== ОСНОВНЫЕ КОМАНДЫ ====================
 
-async def start_self_ping():
-    """Запуск self-ping системы для Render"""
-    global SELF_PING_URL, SELF_PING_TASK
-    
-    # Получаем URL приложения из переменных окружения Render
-    render_service_url = os.environ.get('RENDER_EXTERNAL_URL')
-    
-    if render_service_url:
-        SELF_PING_URL = f"{render_service_url}/health"
-        logger.info(f"🔔 Self-ping система активирована")
-        logger.info(f"🌐 URL для self-ping: {SELF_PING_URL}")
-        
-        # Запускаем self-ping в фоне
-        SELF_PING_TASK = asyncio.create_task(self_ping_worker())
-        return True
-    else:
-        logger.info("ℹ️ Self-ping отключен (приложение не на Render)")
-        return False
-
-async def self_ping_worker():
-    """Фоновый воркер для self-ping"""
-    while True:
-        try:
-            # Ждем 5 минут между пингами
-            await asyncio.sleep(300)  # 300 секунд = 5 минут
-            
-            # Отправляем ping
-            await send_self_ping()
-            
-        except asyncio.CancelledError:
-            logger.info("🛑 Self-ping worker остановлен")
-            break
-        except Exception as e:
-            logger.error(f"❌ Ошибка в self-ping worker: {e}")
-            # При ошибке ждем 1 минуту и пробуем снова
-            await asyncio.sleep(60)
-
-async def send_self_ping():
-    """Отправка self-ping запроса"""
-    global SELF_PING_URL
-    
-    if not SELF_PING_URL:
-        return False
-    
-    try:
-        timeout = ClientTimeout(total=30)
-        async with ClientSession(timeout=timeout) as session:
-            async with session.get(SELF_PING_URL) as response:
-                if response.status == 200:
-                    logger.info(f"✅ Self-ping успешен: {response.status}")
-                    return True
-                else:
-                    logger.warning(f"⚠️ Self-ping вернул статус: {response.status}")
-                    return False
-    except Exception as e:
-        logger.error(f"❌ Ошибка при self-ping: {e}")
-        return False
-
-async def stop_self_ping():
-    """Остановка self-ping системы"""
-    global SELF_PING_TASK
-    
-    if SELF_PING_TASK:
-        SELF_PING_TASK.cancel()
-        try:
-            await SELF_PING_TASK
-        except asyncio.CancelledError:
-            pass
-        logger.info("🛑 Self-ping система остановлена")
-
-# =============================================
-# ПОЛЬЗОВАТЕЛЬСКИЕ ОБРАБОТЧИКИ
-# =============================================
-
-@user_router.message(CommandStart())
+@dp.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
     """Обработчик команды /start"""
-    await state.clear()
-    await state.set_state(UserState.MAIN_MENU)
-    
-    welcome_text = """
-    👋 *Привет, красавица!* 
+    try:
+        await state.clear()
+        await message.answer(
+            "👋 Привет, красавица! Я твой личный помощник по подбору косметики.\n\n"
+            "Я помогу подобрать идеальные средства для твоих волос и тела! 💖\n\n"
+            "Выбери, что тебя интересует:",
+            reply_markup=get_main_menu_keyboard()
+        )
+        logger.info(f"Пользователь {message.from_user.id} запустил бота")
+        
+        # Уведомление админа о новом пользователе
+        if ADMIN_CHAT_ID:
+            try:
+                await bot.send_message(
+                    chat_id=ADMIN_CHAT_ID,
+                    text=f"👤 Новый пользователь!\n"
+                         f"ID: {message.from_user.id}\n"
+                         f"Имя: {message.from_user.full_name}\n"
+                         f"Юзернейм: @{message.from_user.username if message.from_user.username else 'нет'}"
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить сообщение админу: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка в cmd_start: {e}")
+        await message.answer("❌ Произошла ошибка. Пожалуйста, попробуйте позже.")
 
-✨ Я — твой личный бот-консультант по косметике от салона *«Волосы&Beauty»*!
+@dp.message(Command("help"))
+async def cmd_help(message: Message):
+    """Справка по боту"""
+    help_text = (
+        "📚 <b>Справка по боту</b>\n\n"
+        "Я помогу подобрать косметику для волос и тела!\n\n"
+        "💇‍♀️ <b>Для волос</b> - пройди небольшой опрос о типе волос и получи персонализированные рекомендации\n"
+        "💅 <b>Для тела</b> - выбери цель ухода и получи подборку средств\n"
+        "ℹ️ <b>О боте</b> - информация о возможностях бота\n"
+        "👑 <b>Админ-панель</b> - для администраторов\n\n"
+        "Используй кнопки меню для навигации!"
+    )
+    await message.answer(help_text, reply_markup=get_main_menu_keyboard())
 
-🌸 Я помогу тебе подобрать идеальные средства для:
-    • 💇‍♀️ *Волос* — шампуни, маски, сыворотки
-    • 💅 *Тела* — гели, кремы, скрабы
+@dp.message(Command("status"))
+async def cmd_status(message: Message):
+    """Проверка статуса бота и БД"""
+    try:
+        # Проверка подключения к БД
+        db_status = await photo_database.check_connection()
+        
+        # Получение статистики
+        stats = await photo_database.get_stats()
+        
+        status_text = (
+            "📊 <b>Статус системы</b>\n\n"
+            f"🤖 <b>Бот:</b> Активен ✅\n"
+            f"🗄️ <b>База данных:</b> {'Подключена ✅' if db_status else 'Ошибка ❌'}\n\n"
+            f"📈 <b>Статистика:</b>\n"
+            f"• Всего фото: {stats.get('total', 0)}\n"
+            f"• Волосы: {stats.get('hair', 0)}\n"
+            f"• Тело: {stats.get('body', 0)}\n\n"
+            f"👥 <b>Пользователи в памяти:</b> {len(user_data_storage)}\n"
+            f"🕐 <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}"
+        )
+        
+        await message.answer(status_text)
+    except Exception as e:
+        logger.error(f"Ошибка в cmd_status: {e}")
+        await message.answer("❌ Ошибка при получении статуса")
 
-🎀 Просто выбери категорию, и я задам несколько вопросов, чтобы понять, что нужно именно твоим волосам или коже!
+# ==================== ГЛАВНОЕ МЕНЮ ====================
 
-💖 *Давай начнем твою красивую историю?* 
-    """
-    
+@dp.message(F.text == "💇‍♀️ Для волос")
+async def process_hair(message: Message, state: FSMContext):
+    """Начало опроса для волос"""
+    await state.set_state(UserState.WAITING_HAIR_TYPE)
     await message.answer(
-        welcome_text,
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_main_keyboard()
+        "💇‍♀️ <b>Отлично! Начнем подбор средств для волос.</b>\n\n"
+        "Первый вопрос: какой у тебя тип волос?",
+        reply_markup=get_hair_type_keyboard()
     )
 
-@user_router.message(UserState.MAIN_MENU, F.text == "💇‍♀️ Для волос")
-async def choose_hair_category(message: Message, state: FSMContext):
-    """Выбрана категория 'Для волос'"""
-    await state.set_state(UserState.HAIR_CHOOSING_TYPE)
+@dp.message(F.text == "💅 Для тела")
+async def process_body(message: Message, state: FSMContext):
+    """Начало опроса для тела"""
+    await state.set_state(UserState.WAITING_BODY_GOAL)
     await message.answer(
-        "💇‍♀️ *Отлично! Давай узнаем больше о твоих волосах!*\n\n"
-        "🎀 *Какой у тебя тип волос?*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_hair_type_keyboard()
+        "💅 <b>Прекрасно! Займемся уходом за телом.</b>\n\n"
+        "Какова твоя основная цель ухода за телом?",
+        reply_markup=get_body_goal_keyboard()
     )
 
-@user_router.message(UserState.MAIN_MENU, F.text == "💅 Для тела")
-async def choose_body_category(message: Message, state: FSMContext):
-    """Выбрана категория 'Для тела'"""
-    await state.set_state(UserState.BODY_CHOOSING_GOAL)
-    await message.answer(
-        "💅 *Прекрасно! Позаботимся о твоей коже тела!*\n\n"
-        "🌸 *Какую цель ухода ты преследуешь?*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_body_goal_keyboard()
-    )
-
-@user_router.message(UserState.MAIN_MENU, F.text == "ℹ️ О боте")
-async def about_bot(message: Message):
+@dp.message(F.text == "ℹ️ О боте")
+async def process_about(message: Message):
     """Информация о боте"""
-    about_text = """
-    🌸 *О боте «Волосы&Beauty»*
+    about_text = (
+        "🤖 <b>О боте «ВОЛОСЫ&BEAUTY»</b>\n\n"
+        "Я — твой личный консультант по подбору косметики!\n\n"
+        "✨ <b>Что я умею:</b>\n"
+        "• Подбирать средства для волос по типу и проблемам\n"
+        "• Рекомендовать уход за телом по целям\n"
+        "• Показывать фотографии продуктов\n"
+        "• Хранить базу косметических средств\n\n"
+        "💡 <b>Как это работает:</b>\n"
+        "1. Выбираешь категорию (волосы или тело)\n"
+        "2. Отвечаешь на несколько вопросов\n"
+        "3. Получаешь персонализированные рекомендации\n"
+        "4. Смотришь фото продуктов из базы\n\n"
+        "Начни с кнопки «Для волос» или «Для тела»! 🚀"
+    )
+    await message.answer(about_text, reply_markup=get_main_menu_keyboard())
 
-✨ Я создан, чтобы помогать тебе выбирать идеальную косметику для волос и тела!
+@dp.message(F.text == "⬅️ Назад")
+async def process_back(message: Message, state: FSMContext):
+    """Обработка кнопки 'Назад'"""
+    try:
+        current_state = await state.get_state()
+        
+        # Определяем, на какой шаг вернуться
+        if current_state == UserState.WAITING_HAIR_TYPE:
+            await state.clear()
+            await message.answer("Возвращаюсь в главное меню:", reply_markup=get_main_menu_keyboard())
+        
+        elif current_state == UserState.WAITING_HAIR_PROBLEMS:
+            await state.set_state(UserState.WAITING_HAIR_TYPE)
+            await message.answer("Выбери тип волос:", reply_markup=get_hair_type_keyboard())
+        
+        elif current_state == UserState.WAITING_SCALP_TYPE:
+            await state.set_state(UserState.WAITING_HAIR_PROBLEMS)
+            user_data = user_data_storage.get(message.from_user.id, {})
+            problems = user_data.get('hair_problems', [])
+            problems_text = ", ".join(problems) if problems else "не выбрано"
+            await message.answer(
+                f"Текущие проблемы: {problems_text}\n"
+                "Можешь добавить ещё или нажать 'Далее':",
+                reply_markup=get_hair_problems_keyboard()
+            )
+        
+        elif current_state == UserState.WAITING_HAIR_VOLUME:
+            await state.set_state(UserState.WAITING_SCALP_TYPE)
+            await message.answer("Выбери тип кожи головы:", reply_markup=get_scalp_type_keyboard())
+        
+        elif current_state == UserState.WAITING_HAIR_COLOR:
+            await state.set_state(UserState.WAITING_HAIR_VOLUME)
+            await message.answer("Выбери объем волос:", reply_markup=get_hair_volume_keyboard())
+        
+        elif current_state == UserState.WAITING_BODY_GOAL:
+            await state.clear()
+            await message.answer("Возвращаюсь в главное меню:", reply_markup=get_main_menu_keyboard())
+        
+        elif current_state in AdminState:
+            await state.clear()
+            await message.answer("Возвращаюсь в главное меню:", reply_markup=get_main_menu_keyboard())
+        
+        else:
+            await state.clear()
+            await message.answer("Главное меню:", reply_markup=get_main_menu_keyboard())
+            
+    except Exception as e:
+        logger.error(f"Ошибка в process_back: {e}")
+        await state.clear()
+        await message.answer("Возвращаюсь в главное меню:", reply_markup=get_main_menu_keyboard())
 
-🎀 *Что я умею:*
-    • 🔍 Анализировать твой тип волос и кожи
-    • 💡 Давать персонализированные рекомендации
-    • 📸 Показывать фото продуктов
-    • 🛒 Помогать с выбором средств
+@dp.message(F.text == "⬅️ На главную")
+async def process_back_to_main(message: Message, state: FSMContext):
+    """Возврат в главное меню"""
+    await state.clear()
+    await message.answer("Возвращаюсь в главное меню:", reply_markup=get_main_menu_keyboard())
 
-💖 *Наша философия:*
-    Мы верим, что каждая девушка заслуживает индивидуального подхода к красоте!
+# ==================== ОПРОС ДЛЯ ВОЛОС ====================
 
-👑 *Для салонов:*
-    Хочешь такой же бот для своего салона?
-    Пиши: @svoy_cosmetics_support
+@dp.message(UserState.WAITING_HAIR_TYPE, F.text.in_(["Сухие", "Нормальные", "Жирные", "Смешанные"]))
+async def process_hair_type(message: Message, state: FSMContext):
+    """Обработка типа волос"""
+    user_data_storage.set(message.from_user.id, 'hair_type', message.text)
+    await state.set_state(UserState.WAITING_HAIR_PROBLEMS)
+    
+    await message.answer(
+        f"✅ Запомнила: {message.text.lower()} волосы.\n\n"
+        "Теперь расскажи о проблемах волос (можно выбрать несколько):",
+        reply_markup=get_hair_problems_keyboard()
+    )
 
-🌸 *С любовью, команда «Волосы&Beauty»*
-    """
-    await message.answer(about_text, parse_mode=ParseMode.MARKDOWN)
+@dp.message(UserState.WAITING_HAIR_PROBLEMS)
+async def process_hair_problems(message: Message, state: FSMContext):
+    """Обработка проблем волос"""
+    user_data = user_data_storage.get(message.from_user.id, {})
+    problems = user_data.get('hair_problems', [])
+    
+    if message.text == "➡️ Далее":
+        if problems:
+            await state.set_state(UserState.WAITING_SCALP_TYPE)
+            await message.answer(
+                "Отлично! Теперь укажи тип кожи головы:",
+                reply_markup=get_scalp_type_keyboard()
+            )
+        else:
+            await message.answer("❌ Пожалуйста, выбери хотя бы одну проблему.")
+    elif message.text in ["Выпадение", "Ломкость", "Секущиеся кончики", "Тусклость", "Перхоть", "Зуд"]:
+        if message.text not in problems:
+            problems.append(message.text)
+            user_data_storage.set(message.from_user.id, 'hair_problems', problems)
+        
+        problems_text = ", ".join(problems)
+        await message.answer(
+            f"✅ Добавила: {message.text}\n\n"
+            f"Текущие проблемы: {problems_text}\n"
+            "Можешь добавить ещё или нажать 'Далее':",
+            reply_markup=get_hair_problems_keyboard()
+        )
+    else:
+        await message.answer("❌ Пожалуйста, используй кнопки ниже.")
 
-@user_router.message(UserState.MAIN_MENU, F.text == "👑 Админ-панель")
-async def admin_panel_request(message: Message, state: FSMContext):
-    """Запрос доступа к админ-панели"""
+@dp.message(UserState.WAITING_SCALP_TYPE, F.text.in_(["Сухая", "Нормальная", "Жирная", "Чувствительная"]))
+async def process_scalp_type(message: Message, state: FSMContext):
+    """Обработка типа кожи головы"""
+    user_data_storage.set(message.from_user.id, 'scalp_type', message.text)
+    await state.set_state(UserState.WAITING_HAIR_VOLUME)
+    
+    await message.answer(
+        f"✅ Запомнила: {message.text.lower()} кожа головы.\n\n"
+        "Какой у тебя объем волос?",
+        reply_markup=get_hair_volume_keyboard()
+    )
+
+@dp.message(UserState.WAITING_HAIR_VOLUME, F.text.in_(["Тонкие", "Средней толщины", "Густые", "Очень густые"]))
+async def process_hair_volume(message: Message, state: FSMContext):
+    """Обработка объема волос"""
+    user_data_storage.set(message.from_user.id, 'hair_volume', message.text)
+    await state.set_state(UserState.WAITING_HAIR_COLOR)
+    
+    await message.answer(
+        f"✅ Запомнила: {message.text.lower()} волосы.\n\n"
+        "Последний вопрос: какой цвет волос?",
+        reply_markup=get_hair_color_keyboard()
+    )
+
+@dp.message(UserState.WAITING_HAIR_COLOR, F.text.in_(["Русые", "Рыжие", "Брюнетка", "Блондинка", "Окрашенные", "Натуральные"]))
+async def process_hair_color(message: Message, state: FSMContext):
+    """Обработка цвета волос и вывод результата"""
+    try:
+        user_data_storage.set(message.from_user.id, 'hair_color', message.text)
+        
+        # Получаем все данные пользователя
+        user_data = user_data_storage.get(message.from_user.id, {})
+        
+        # Формируем рекомендации
+        recommendations = await generate_hair_recommendations(user_data)
+        
+        # Получаем фото продуктов из БД
+        photos = await photo_database.get_photos_by_category("hair", limit=3)
+        
+        # Отправляем рекомендации
+        await message.answer(
+            recommendations,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_main_menu_keyboard()
+        )
+        
+        # Отправляем фото, если есть
+        if photos:
+            await send_photos(message.chat.id, photos, "Вот подходящие средства для волос:")
+        else:
+            await message.answer("📷 Фото продуктов временно недоступны. База обновляется!")
+        
+        # Очищаем состояние
+        await state.clear()
+        
+        logger.info(f"Пользователь {message.from_user.id} завершил опрос для волос")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в process_hair_color: {e}")
+        await message.answer(
+            "❌ Произошла ошибка при формировании рекомендаций. Попробуйте позже.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        await state.clear()
+
+async def generate_hair_recommendations(user_data: dict) -> str:
+    """Генерация персонализированных рекомендаций для волос"""
+    hair_type = user_data.get('hair_type', 'не указан')
+    problems = user_data.get('hair_problems', [])
+    scalp_type = user_data.get('scalp_type', 'не указан')
+    volume = user_data.get('hair_volume', 'не указан')
+    color = user_data.get('hair_color', 'не указан')
+    
+    # Базовые рекомендации
+    rec_text = "💇‍♀️ <b>ПЕРСОНАЛИЗИРОВАННЫЕ РЕКОМЕНДАЦИИ</b>\n\n"
+    
+    # По типу волос
+    type_rec = {
+        "Сухие": "• Используйте увлажняющие шампуни и маски\n• Обязательно наносите масла на кончики\n• Избегайте частого мытья",
+        "Нормальные": "• Поддерживающий уход с мягкими средствами\n• Периодические питательные маски\n• Защита от термического воздействия",
+        "Жирные": "• Очищающие шампуни для жирных волос\n• Легкие кондиционеры только на кончики\n• Регулярное глубокое очищение",
+        "Смешанные": "• Балансирующие средства\n• Разный уход для корней и кончиков\n• Маски для кончиков, легкие формулы для корней"
+    }
+    
+    rec_text += f"<b>Для {hair_type.lower()} волос:</b>\n{type_rec.get(hair_type, '')}\n\n"
+    
+    # По проблемам
+    if problems:
+        rec_text += "<b>Для решения проблем:</b>\n"
+        problem_solutions = {
+            "Выпадение": "• Сыворотки для укрепления корней\n• Массаж кожи головы\n• Средства с кофеином и никотиновой кислотой",
+            "Ломкость": "• Восстанавливающие маски\n• Белковые обработки\n• Защита от механических повреждений",
+            "Секущиеся кончики": "• Регулярная стрижка\n• Масла и сыворотки для кончиков\n• Избегайте грубого расчесывания",
+            "Тусклость": "• Осветляющие шампуни\n• Блеск-спреи\n• Полирующие сыворотки",
+            "Перхоть": "• Противогрибковые шампуни\n• Успокаивающие средства для кожи головы\n• Регулярное отшелушивание",
+            "Зуд": "• Успокаивающие средства с мятой\n• Гипоаллергенные формулы\n• Увлажнение кожи головы"
+        }
+        
+        for problem in problems:
+            if problem in problem_solutions:
+                rec_text += f"• <b>{problem}:</b> {problem_solutions[problem]}\n"
+        rec_text += "\n"
+    
+    # По типу кожи головы
+    scalp_rec = {
+        "Сухая": "• Используйте увлажняющие средства для кожи головы\n• Избегайте сушащих компонентов (SLS, спирт)\n• Масляные массажи",
+        "Нормальная": "• Поддерживающий балансирующий уход\n• Регулярное мягкое очищение\n• Периодические пилинги",
+        "Жирная": "• Регулирующие себум средства\n• Глубокое очищение\n• Матирующие сыворотки",
+        "Чувствительная": "• Гипоаллергенные формулы\n• Успокаивающие ингредиенты (пантенол, аллантоин)\n• Избегайте агрессивных ПАВ"
+    }
+    
+    rec_text += f"<b>Для {scalp_type.lower()} кожи головы:</b>\n{scalp_rec.get(scalp_type, '')}\n\n"
+    
+    # По объему
+    volume_rec = {
+        "Тонкие": "• Объемящие шампуни и спреи\n• Легкие текстуры, без утяжеления\n• Сухие шампуни для дополнительного объема",
+        "Средней толщины": "• Укрепляющие и уплотняющие средства\n• Средней плотности текстуры\n• Термозащита при укладке",
+        "Густые": "• Разглаживающие и увлажняющие средства\n• Более плотные текстуры\n• Средства для контроля объема",
+        "Очень густые": "• Интенсивное увлажнение\n• Суперпитательные маски\n• Масла для контроля и блеска"
+    }
+    
+    rec_text += f"<b>Для {volume.lower()} волос:</b>\n{volume_rec.get(volume, '')}\n\n"
+    
+    # По цвету
+    color_rec = {
+        "Русые": "• Средства для светлых волос\n• Оттеночные шампуни против желтизны\n• UV-защита от выгорания",
+        "Рыжие": "• Усиливающие цвет средства\n• Защита от вымывания пигмента\n• Специальные линии для рыжих",
+        "Брюнетка": "• Усиление глубины цвета\n• Средства с маслами для блеска\n• Защита от седины",
+        "Блондинка": "• Осветляющий и ухаживающий уход\n• Фиолетовые шампуни\n• Интенсивное восстановление",
+        "Окрашенные": "• Средства для окрашенных волос\n• Защита цвета от вымывания\n• Интенсивное восстановление структуры",
+        "Натуральные": "• Поддерживающий натуральный уход\n• Усиление естественного блеска\n• Защита природного пигмента"
+    }
+    
+    rec_text += f"<b>Для {color.lower()} волос:</b>\n{color_rec.get(color, '')}\n\n"
+    
+    rec_text += "✨ <b>Выбери средства из предложенных фото или обратись за консультацией!</b>"
+    
+    return rec_text
+
+# ==================== ОПРОС ДЛЯ ТЕЛА ====================
+
+@dp.message(UserState.WAITING_BODY_GOAL, F.text.in_(["Увлажнение", "Питание", "Омоложение", "Детокс", "Расслабление", "Тонус"]))
+async def process_body_goal(message: Message, state: FSMContext):
+    """Обработка цели ухода за телом"""
+    try:
+        goal = message.text
+        user_data_storage.set(message.from_user.id, 'body_goal', goal)
+        
+        # Генерация рекомендаций
+        recommendations = await generate_body_recommendations(goal)
+        
+        # Получаем фото продуктов из БД
+        photos = await photo_database.get_photos_by_category("body", limit=3)
+        
+        # Отправляем рекомендации
+        await message.answer(
+            recommendations,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_main_menu_keyboard()
+        )
+        
+        # Отправляем фото, если есть
+        if photos:
+            await send_photos(message.chat.id, photos, "Вот подходящие средства для тела:")
+        else:
+            await message.answer("📷 Фото продуктов временно недоступны. База обновляется!")
+        
+        # Очищаем состояние
+        await state.clear()
+        
+        logger.info(f"Пользователь {message.from_user.id} завершил опрос для тела")
+        
+    except Exception as e:
+        logger.error(f"Ошибка в process_body_goal: {e}")
+        await message.answer(
+            "❌ Произошла ошибка. Попробуйте позже.",
+            reply_markup=get_main_menu_keyboard()
+        )
+        await state.clear()
+
+async def generate_body_recommendations(goal: str) -> str:
+    """Генерация рекомендаций для тела по цели"""
+    goals = {
+        "Увлажнение": {
+            "title": "💦 ИНТЕНСИВНОЕ УВЛАЖНЕНИЕ",
+            "recommendations": [
+                "• Кремы и лосьоны с гиалуроновой кислотой",
+                "• Масла для тела (миндальное, жожоба, аргановое)",
+                "• Увлажняющие гели для душа без SLS",
+                "• Сыворотки для сухой кожи",
+                "• Питательные маски для тела"
+            ],
+            "ingredients": "гиалуроновая кислота, глицерин, мочевина, масло ши, сквалан"
+        },
+        "Питание": {
+            "title": "🌿 ГЛУБОКОЕ ПИТАНИЕ",
+            "recommendations": [
+                "• Питательные кремы с маслами какао и ши",
+                "• Восстанавливающие бальзамы",
+                "• Масляные смеси для массажа",
+                "• Скрабы с питательными маслами",
+                "• Ночные маски для интенсивного восстановления"
+            ],
+            "ingredients": "масло ши, какао, ланолин, витамин Е, пчелиный воск"
+        },
+        "Омоложение": {
+            "title": "✨ АНТИВОЗРАСТНОЙ УХОД",
+            "recommendations": [
+                "• Кремы с ретинолом и пептидами",
+                "• Сыворотки с витамином С",
+                "• Лифтинг-средства с коллагеном",
+                "• Флюиды с SPF защитой",
+                "• Маски для упругости кожи"
+            ],
+            "ingredients": "ретинол, витамин С, пептиды, коэнзим Q10, SPF"
+        },
+        "Детокс": {
+            "title": "🌱 ДЕТОКС И ОЧИЩЕНИЕ",
+            "recommendations": [
+                "• Гели для душа с активированным углем",
+                "• Скрабы с морской солью и водорослями",
+                "• Обертывания с глиной",
+                "• Тонизирующие спреи",
+                "• Масла для лимфодренажного массажа"
+            ],
+            "ingredients": "активированный уголь, глина, морская соль, водоросли, мята"
+        },
+        "Расслабление": {
+            "title": "🕯️ РЕЛАКС И СПОКОЙСТВИЕ",
+            "recommendations": [
+                "• Средства с лавандой и ромашкой",
+                "• Масла для ванны",
+                "• Кремы с ароматерапией",
+                "• Соль для ванн с магнием",
+                "• Успокаивающие бальзамы"
+            ],
+            "ingredients": "лаванда, ромашка, иланг-иланг, магний, мелисса"
+        },
+        "Тонус": {
+            "title": "🏃‍♀️ ТОНУС И БОДРОСТЬ",
+            "recommendations": [
+                "• Охлаждающие гели",
+                "• Кремы с кофеином",
+                "• Антицеллюлитные средства",
+                "• Скрабы с ментолом",
+                "• Спреи для мгновенной свежести"
+            ],
+            "ingredients": "ментол, кофеин, экстракт конского каштана, гуарана, цитрусовые"
+        }
+    }
+    
+    goal_info = goals.get(goal, goals["Увлажнение"])
+    
+    text = f"💅 <b>{goal_info['title']}</b>\n\n"
+    text += "<b>Рекомендуемые средства:</b>\n"
+    for rec in goal_info["recommendations"]:
+        text += f"{rec}\n"
+    
+    text += f"\n<b>Ключевые ингредиенты:</b>\n{goal_info['ingredients']}\n\n"
+    text += "✨ <b>Выбери средства из предложенных фото для достижения цели!</b>"
+    
+    return text
+
+# ==================== ОБРАБОТКА ФОТО ====================
+
+async def send_photos(chat_id: int, photos: List[dict], caption: str = ""):
+    """Отправка нескольких фото с подписями"""
+    try:
+        if not photos:
+            return
+        
+        # Отправляем первое фото с общим заголовком
+        first_photo = photos[0]
+        await bot.send_photo(
+            chat_id=chat_id,
+            photo=first_photo['file_id'],
+            caption=f"{caption}\n\n<b>{first_photo['display_name']}</b>\nКатегория: {first_photo['category']}\nТип: {first_photo['subcategory']}"
+        )
+        
+        # Остальные фото отправляем по одному
+        for photo in photos[1:]:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=photo['file_id'],
+                caption=f"<b>{photo['display_name']}</b>\nКатегория: {photo['category']}\nТип: {photo['subcategory']}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка при отправке фото: {e}")
+
+# ==================== АДМИН-ПАНЕЛЬ ====================
+
+@dp.message(F.text == "👑 Админ-панель")
+async def process_admin_access(message: Message, state: FSMContext):
+    """Доступ к админ-панели"""
     await state.set_state(AdminState.WAITING_PASSWORD)
     await message.answer(
-        "🔐 *Введите пароль для доступа к админ-панели:*",
-        parse_mode=ParseMode.MARKDOWN,
+        "🔐 <b>Доступ к админ-панели</b>\n\n"
+        "Введите пароль для входа:",
         reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="🔙 Отмена")]],
+            keyboard=[[KeyboardButton(text="⬅️ Назад")]],
             resize_keyboard=True
         )
     )
 
-@user_router.message(UserState.MAIN_MENU)
-async def handle_main_menu(message: Message):
-    """Обработчик главного меню"""
-    await message.answer(
-        "🌸 *Пожалуйста, выбери одну из кнопок меню:*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_main_keyboard()
-    )
-
-# =============================================
-# ОБРАБОТЧИКИ ДЛЯ ВОЛОС
-# =============================================
-
-@user_router.message(UserState.HAIR_CHOOSING_TYPE)
-async def hair_type_handler(message: Message, state: FSMContext):
-    """Обработчик выбора типа волос"""
-    if message.text == "↩️ Назад":
-        await state.set_state(UserState.MAIN_MENU)
-        await message.answer(
-            "🌸 *Возвращаемся в главное меню!*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_main_keyboard()
-        )
-        return
-    
-    hair_types = {
-        "👩‍🦰 Сухие": "сухие",
-        "👩‍🦱 Нормальные": "нормальные",
-        "👩‍🦳 Жирные": "жирные",
-        "👩‍🦲 Смешанные": "смешанные"
-    }
-    
-    if message.text not in hair_types:
-        await message.answer("🌸 *Пожалуйста, выбери тип волос из предложенных вариантов:*",
-                           parse_mode=ParseMode.MARKDOWN)
-        return
-    
-    hair_type = hair_types[message.text]
-    save_user_data(message.from_user.id, "hair_type", hair_type)
-    clear_selected_problems(message.from_user.id)
-    
-    await state.set_state(UserState.HAIR_CHOOSING_PROBLEMS)
-    await message.answer(
-        f"💖 *Отлично! Твой тип волос: {hair_type.capitalize()}*\n\n"
-        "✨ *Есть ли у тебя проблемы с волосами?*\n"
-        "🎀 *Можно выбрать несколько вариантов, а затем нажать «Готово»:*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_hair_problems_keyboard()
-    )
-
-@user_router.message(UserState.HAIR_CHOOSING_PROBLEMS)
-async def hair_problems_handler(message: Message, state: FSMContext):
-    """Обработчик выбора проблем волос"""
-    if message.text == "↩️ Назад":
-        await state.set_state(UserState.HAIR_CHOOSING_TYPE)
-        await message.answer(
-            "💇‍♀️ *Выбери тип своих волос:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_hair_type_keyboard()
-        )
-        return
-    
-    problems_map = {
-        "💔 Выпадение": "выпадение",
-        "✨ Ломкость": "ломкость",
-        "🔥 Секущиеся кончики": "секущиеся кончики",
-        "😴 Тусклость": "тусклость",
-        "🔍 Перхоть": "перхоть",
-        "🎯 Зуд кожи головы": "зуд"
-    }
-    
-    if message.text == "✅ Готово":
-        selected_problems = get_selected_problems(message.from_user.id)
-        if not selected_problems:
-            selected_problems = ["нет проблем"]
-        
-        await state.set_state(UserState.HAIR_CHOOSING_SCALP)
-        await message.answer(
-            f"🌸 *Записала твои проблемы: {', '.join(selected_problems)}*\n\n"
-            "🎀 *Теперь расскажи о типе кожи головы:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_scalp_type_keyboard()
-        )
-        return
-    
-    if message.text in problems_map:
-        problem = problems_map[message.text]
-        selected_problems = get_selected_problems(message.from_user.id)
-        
-        if problem in selected_problems:
-            remove_selected_problem(message.from_user.id, problem)
-            action = "убрала"
-        else:
-            add_selected_problem(message.from_user.id, problem)
-            action = "добавила"
-        
-        selected_problems = get_selected_problems(message.from_user.id)
-        count = len(selected_problems)
-        
-        await message.answer(
-            f"✨ *Я {action} «{problem}»*\n"
-            f"🎀 *Выбрано проблем: {count}*\n\n"
-            "*Продолжай выбирать или нажми «Готово»:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_hair_problems_keyboard()
-        )
-    else:
-        await message.answer("🌸 *Пожалуйста, выбери проблему из списка:*",
-                           parse_mode=ParseMode.MARKDOWN)
-
-@user_router.message(UserState.HAIR_CHOOSING_SCALP)
-async def scalp_type_handler(message: Message, state: FSMContext):
-    """Обработчик выбора типа кожи головы"""
-    if message.text == "↩️ Назад":
-        await state.set_state(UserState.HAIR_CHOOSING_PROBLEMS)
-        await message.answer(
-            "✨ *Выбери проблемы с волосами:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_hair_problems_keyboard()
-        )
-        return
-    
-    scalp_types = {
-        "🌵 Сухая": "сухая",
-        "🌊 Нормальная": "нормальная",
-        "💦 Жирная": "жирная",
-        "🎭 Чувствительная": "чувствительная"
-    }
-    
-    if message.text not in scalp_types:
-        await message.answer("🌸 *Пожалуйста, выбери тип кожи головы из предложенных:*",
-                           parse_mode=ParseMode.MARKDOWN)
-        return
-    
-    scalp_type = scalp_types[message.text]
-    save_user_data(message.from_user.id, "scalp_type", scalp_type)
-    
-    await state.set_state(UserState.HAIR_CHOOSING_VOLUME)
-    await message.answer(
-        f"💖 *Записала: кожа головы — {scalp_type}*\n\n"
-        "🌸 *Какой у тебя объем волос?*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_hair_volume_keyboard()
-    )
-
-@user_router.message(UserState.HAIR_CHOOSING_VOLUME)
-async def hair_volume_handler(message: Message, state: FSMContext):
-    """Обработчик выбора объема волос"""
-    if message.text == "↩️ Назад":
-        await state.set_state(UserState.HAIR_CHOOSING_SCALP)
-        await message.answer(
-            "🎀 *Выбери тип кожи головы:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_scalp_type_keyboard()
-        )
-        return
-    
-    volume_types = {
-        "💁‍♀️ Тонкие": "тонкие",
-        "👩‍🦱 Средней толщины": "средней толщины",
-        "👩‍🦰 Густые": "густые",
-        "👑 Очень густые": "очень густые"
-    }
-    
-    if message.text not in volume_types:
-        await message.answer("🌸 *Пожалуйста, выбери объем волос из предложенных:*",
-                           parse_mode=ParseMode.MARKDOWN)
-        return
-    
-    hair_volume = volume_types[message.text]
-    save_user_data(message.from_user.id, "hair_volume", hair_volume)
-    
-    await state.set_state(UserState.HAIR_CHOOSING_COLOR)
-    await message.answer(
-        f"✨ *Отлично! Твои волосы — {hair_volume}*\n\n"
-        "🎨 *Какой у тебя цвет волос?*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_hair_color_keyboard()
-    )
-
-@user_router.message(UserState.HAIR_CHOOSING_COLOR)
-async def hair_color_handler(message: Message, state: FSMContext):
-    """Обработчик выбора цвета волос"""
-    if message.text == "↩️ Назад":
-        await state.set_state(UserState.HAIR_CHOOSING_VOLUME)
-        await message.answer(
-            "🌸 *Выбери объем волос:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_hair_volume_keyboard()
-        )
-        return
-    
-    color_types = {
-        "👱‍♀️ Русые": "русые",
-        "👩‍🦰 Рыжие": "рыжие",
-        "👩‍🦱 Брюнетка": "брюнет",
-        "👩‍🦳 Блондинка": "блонд",
-        "🎨 Окрашенные": "окрашенные",
-        "🌿 Натуральные": "натуральные"
-    }
-    
-    if message.text not in color_types:
-        await message.answer("🌸 *Пожалуйста, выбери цвет волос из предложенных:*",
-                           parse_mode=ParseMode.MARKDOWN)
-        return
-    
-    hair_color = color_types[message.text]
-    save_user_data(message.from_user.id, "hair_color", hair_color)
-    
-    # Генерируем результат
-    await generate_hair_result(message, state)
-
-async def generate_hair_result(message: Message, state: FSMContext):
-    """Генерация результата для волос"""
-    try:
-        user_id = message.from_user.id
-        user_data = get_user_data(user_id)
-        
-        hair_type = user_data.get("hair_type", "не указан")
-        scalp_type = user_data.get("scalp_type", "не указан")
-        hair_volume = user_data.get("hair_volume", "не указан")
-        hair_color = user_data.get("hair_color", "не указан")
-        problems = get_selected_problems(user_id)
-        
-        # Формируем рекомендации
-        recommendations = []
-        
-        if hair_type == "сухие":
-            recommendations.append("💧 *Увлажняющие маски* 2-3 раза в неделю")
-            recommendations.append("🌿 *Масла для кончиков* ежедневно")
-        elif hair_type == "жирные":
-            recommendations.append("🍃 *Очищающие шампуни* для жирных волос")
-            recommendations.append("✨ *Сухие шампуни* для экстренной помощи")
-        else:
-            recommendations.append("🌟 *Сбалансированный уход* для поддержания здоровья")
-        
-        if "выпадение" in problems:
-            recommendations.append("💪 *Сыворотки для укрепления* с аминексилом")
-        if "перхоть" in problems:
-            recommendations.append("🎯 *Шампуни с цинком* или кетоконазолом")
-        if "секущиеся кончики" in problems:
-            recommendations.append("✂️ *Регулярная стрижка* кончиков раз в 2-3 месяца")
-        
-        if hair_color == "окрашенные":
-            recommendations.append("🎨 *Специальные средства* для окрашенных волос")
-            recommendations.append("🔒 *UV-защита* от выцветания")
-        
-        # Получаем продукты из базы данных
-        products = await photo_db.get_recommended_products("💇‍♀️ Волосы")
-        
-        result_text = f"""
-💖 *ТВОЙ ПЕРСОНАЛЬНЫЙ РЕЗУЛЬТАТ* 💖
-
-👩 *Тип волос:* {hair_type.capitalize()}
-🎯 *Проблемы:* {', '.join(problems) if problems else 'нет проблем'}
-🌿 *Кожа головы:* {scalp_type.capitalize()}
-💁 *Объем:* {hair_volume.capitalize()}
-🎨 *Цвет:* {hair_color.capitalize()}
-
-✨ *МОИ РЕКОМЕНДАЦИИ ДЛЯ ТЕБЯ:*
-"""
-        
-        for i, rec in enumerate(recommendations, 1):
-            result_text += f"\n    {i}. {rec}"
-        
-        result_text += "\n\n🌸 *Идеальные продукты для тебя:*"
-        
-        await state.set_state(UserState.SHOWING_RESULT)
-        await message.answer(
-            result_text,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        # Отправляем рекомендованные продукты
-        if products:
-            for product in products[:3]:  # Показываем первые 3 продукта
-                try:
-                    await message.answer_photo(
-                        photo=product['file_id'],
-                        caption=f"✨ *{product['display_name']}*\n\n"
-                               f"🎀 Идеально подходит для твоего типа волос!\n"
-                               f"💝 Рекомендуем к использованию!",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                    await asyncio.sleep(0.5)  # Небольшая задержка между сообщениями
-                except Exception as e:
-                    logger.error(f"❌ Ошибка отправки фото: {e}")
-                    await message.answer(
-                        f"✨ *{product['display_name']}*\n"
-                        f"🌸 (Фото временно недоступно)",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-        else:
-            await message.answer(
-                "🌸 *В базе пока нет продуктов для твоего типа волос.*\n"
-                "🎀 *Администратор скоро добавит подходящие средства!*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        
-        # Предлагаем начать заново
-        await message.answer(
-            "💖 *Хочешь получить рекомендации для другой категории?*\n"
-            "✨ *Или начать заново с волосами?*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_main_keyboard()
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка в generate_hair_result: {e}")
-        await message.answer(
-            "😔 *Упс! Произошла ошибка при генерации рекомендаций.*\n\n"
-            "✨ *Попробуй начать заново командой /start*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_main_keyboard()
-        )
-
-# =============================================
-# ОБРАБОТЧИКИ ДЛЯ ТЕЛА
-# =============================================
-
-@user_router.message(UserState.BODY_CHOOSING_GOAL)
-async def body_goal_handler(message: Message, state: FSMContext):
-    """Обработчик выбора цели ухода за телом"""
-    if message.text == "↩️ Назад":
-        await state.set_state(UserState.MAIN_MENU)
-        await message.answer(
-            "🌸 *Возвращаемся в главное меню!*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_main_keyboard()
-        )
-        return
-    
-    goals = {
-        "💦 Увлажнение": "увлажнение",
-        "✨ Питание": "питание",
-        "🎯 Омоложение": "омоложение",
-        "🍋 Детокс": "детокс",
-        "🌿 Расслабление": "расслабление",
-        "🏃‍♀️ Тонус": "тонус"
-    }
-    
-    if message.text not in goals:
-        await message.answer("🌸 *Пожалуйста, выбери цель из предложенных вариантов:*",
-                           parse_mode=ParseMode.MARKDOWN)
-        return
-    
-    body_goal = goals[message.text]
-    save_user_data(message.from_user.id, "body_goal", body_goal)
-    
-    # Генерируем результат для тела
-    await generate_body_result(message, state)
-
-async def generate_body_result(message: Message, state: FSMContext):
-    """Генерация результата для тела"""
-    try:
-        user_id = message.from_user.id
-        body_goal = get_user_data(user_id).get("body_goal", "не указана")
-        
-        # Формируем рекомендации
-        recommendations = []
-        products_category = None
-        
-        if body_goal == "увлажнение":
-            recommendations.append("💧 *Кремы с гиалуроновой кислотой*")
-            recommendations.append("🌿 *Молочко для тела* после каждого душа")
-            recommendations.append("🚿 *Увлажняющие гели для душа* без SLS")
-            products_category = "💅 Тело"
-            
-        elif body_goal == "питание":
-            recommendations.append("✨ *Богатые кремы* с маслами ши и какао")
-            recommendations.append("🌰 *Питательные масла* для сухих участков")
-            recommendations.append("🧴 *Бальзамы* для особенно сухой кожи")
-            products_category = "💅 Тело"
-            
-        elif body_goal == "омоложение":
-            recommendations.append("🎯 *Сыворотки с ретинолом* на ночь")
-            recommendations.append("🌟 *Кремы с пептидами* для упругости")
-            recommendations.append("✨ *Средства с витамином C* утром")
-            products_category = "💅 Тело"
-            
-        elif body_goal == "детокс":
-            recommendations.append("🍃 *Скрабы с морской солью* 2 раза в неделю")
-            recommendations.append("🌿 *Гели для душа с углем* для глубокого очищения")
-            recommendations.append("💦 *Тоники для тела* с кислотами")
-            products_category = "💅 Тело"
-            
-        elif body_goal == "расслабление":
-            recommendations.append("🛁 *Масла для ванны* с лавандой")
-            recommendations.append("🌙 *Ночные кремы* с мелатонином")
-            recommendations.append("✨ *Массажные масла* с ароматерапией")
-            products_category = "💅 Тело"
-            
-        else:  # тонус
-            recommendations.append("🏃‍♀️ *Охлаждающие гели* после тренировок")
-            recommendations.append("💪 *Кремы с кофеином* против целлюлита")
-            recommendations.append("✨ *Спреи для тела* с ментолом")
-            products_category = "💅 Тело"
-        
-        result_text = f"""
-💅 *ТВОЙ ПЕРСОНАЛЬНЫЙ РЕЗУЛЬТАТ ДЛЯ ТЕЛА* 💅
-
-🎯 *Твоя цель:* {body_goal.capitalize()}
-
-✨ *МОИ РЕКОМЕНДАЦИИ:*
-"""
-        
-        for i, rec in enumerate(recommendations, 1):
-            result_text += f"\n    {i}. {rec}"
-        
-        result_text += "\n\n🌸 *Идеальные продукты для тебя:*"
-        
-        await state.set_state(UserState.SHOWING_RESULT)
-        await message.answer(
-            result_text,
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        # Отправляем рекомендованные продукты
-        products = await photo_db.get_recommended_products(products_category)
-        
-        if products:
-            for product in products[:3]:  # Показываем первые 3 продукта
-                try:
-                    await message.answer_photo(
-                        photo=product['file_id'],
-                        caption=f"✨ *{product['display_name']}*\n\n"
-                               f"🎀 Идеально подходит для твоей цели!\n"
-                               f"💝 Рекомендуем к использованию!",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-                    await asyncio.sleep(0.5)
-                except Exception as e:
-                    logger.error(f"❌ Ошибка отправки фото: {e}")
-                    await message.answer(
-                        f"✨ *{product['display_name']}*\n"
-                        f"🌸 (Фото временно недоступно)",
-                        parse_mode=ParseMode.MARKDOWN
-                    )
-        else:
-            await message.answer(
-                "🌸 *В базе пока нет продуктов для твоей цели.*\n"
-                "🎀 *Администратор скоро добавит подходящие средства!*",
-                parse_mode=ParseMode.MARKDOWN
-            )
-        
-        # Предлагаем начать заново
-        await message.answer(
-            "💖 *Хочешь получить рекомендации для другой категории?*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_main_keyboard()
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка в generate_body_result: {e}")
-        await message.answer(
-            "😔 *Упс! Произошла ошибка при генерации рекомендаций.*\n\n"
-            "✨ *Попробуй начать заново командой /start*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_main_keyboard()
-        )
-
-# =============================================
-# АДМИНИСТРАТИВНЫЕ ОБРАБОТЧИКИ
-# =============================================
-
-@admin_router.message(AdminState.WAITING_PASSWORD)
-async def admin_password_handler(message: Message, state: FSMContext):
-    """Обработчик ввода пароля админа"""
-    if message.text == "🔙 Отмена":
-        await state.clear()
-        await state.set_state(UserState.MAIN_MENU)
-        await message.answer(
-            "🌸 *Возвращаемся в главное меню!*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_main_keyboard()
-        )
-        return
-    
+@dp.message(AdminState.WAITING_PASSWORD)
+async def process_admin_password(message: Message, state: FSMContext):
+    """Проверка пароля админа"""
     if message.text == ADMIN_PASSWORD:
-        await state.set_state(AdminState.ADMIN_MAIN_MENU)
-        count = await photo_db.count_photos()
+        await state.set_state(AdminState.MAIN_MENU)
+        await message.answer(
+            "✅ <b>Доступ разрешен!</b>\n\n"
+            "Добро пожаловать в админ-панель. Выберите действие:",
+            reply_markup=get_admin_menu_keyboard()
+        )
+        logger.info(f"Пользователь {message.from_user.id} вошел в админ-панель")
         
-        await message.answer(
-            f"👑 *Добро пожаловать в админ-панель!*\n\n"
-            f"📊 *Статистика базы:*\n"
-            f"   • 📸 Фото в базе: {count}\n"
-            f"   • 💾 База данных: {'✅ Подключена' if photo_db.is_connected else '❌ Отключена'}\n\n"
-            f"✨ *Выбери действие:*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_admin_main_keyboard()
-        )
+        # Уведомление админа о входе
+        if ADMIN_CHAT_ID and str(message.from_user.id) != ADMIN_CHAT_ID:
+            try:
+                await bot.send_message(
+                    chat_id=ADMIN_CHAT_ID,
+                    text=f"⚠️ Вход в админ-панель!\n"
+                         f"ID: {message.from_user.id}\n"
+                         f"Имя: {message.from_user.full_name}"
+                )
+            except:
+                pass
+    elif message.text == "⬅️ Назад":
+        await state.clear()
+        await message.answer("Возвращаюсь в главное меню:", reply_markup=get_main_menu_keyboard())
     else:
+        await message.answer("❌ Неверный пароль. Попробуйте еще раз или нажмите 'Назад'.")
+
+@dp.message(AdminState.MAIN_MENU, F.text == "📤 Загрузить фото")
+async def process_upload_photo(message: Message, state: FSMContext):
+    """Начало загрузки фото"""
+    await state.set_state(AdminState.WAITING_CATEGORY)
+    await message.answer(
+        "📤 <b>Загрузка нового фото</b>\n\n"
+        "Выберите категорию:",
+        reply_markup=get_categories_keyboard()
+    )
+
+@dp.message(AdminState.WAITING_CATEGORY, F.text.in_(["Волосы", "Тело"]))
+async def process_category(message: Message, state: FSMContext):
+    """Обработка выбора категории"""
+    await state.update_data(category=message.text)
+    await state.set_state(AdminState.WAITING_SUBCATEGORY)
+    
+    if message.text == "Волосы":
         await message.answer(
-            "❌ *Неверный пароль!*\n"
-            "🎀 *Попробуй еще раз или нажми «Отмена»:*",
-            parse_mode=ParseMode.MARKDOWN
+            "Выберите подкатегорию (тип средства):\n\n"
+            "• Шампунь\n• Кондиционер\n• Маска\n• Сыворотка\n• Масло\n• Спрей\n"
+            "• Лосьон\n• Тоник\n• Пилинг\n• Другое",
+            reply_markup=get_back_keyboard()
+        )
+    else:  # Тело
+        await message.answer(
+            "Выберите подкатегорию (тип средства):\n\n"
+            "• Гель для душа\n• Скраб\n• Крем для тела\n• Масло для тела\n• Дезодорант\n"
+            "• Антицеллюлитное средство\n• Крем для рук\n• Бальзам для губ\n• Другое",
+            reply_markup=get_back_keyboard()
         )
 
-@admin_router.message(AdminState.ADMIN_MAIN_MENU, F.text == "📤 Загрузить фото")
-async def admin_upload_photo(message: Message, state: FSMContext):
-    """Начало загрузки фото"""
-    await state.set_state(AdminState.ADMIN_CHOOSING_CATEGORY)
+@dp.message(AdminState.WAITING_SUBCATEGORY)
+async def process_subcategory(message: Message, state: FSMContext):
+    """Обработка подкатегории"""
+    await state.update_data(subcategory=message.text)
+    await state.set_state(AdminState.WAITING_PRODUCT_NAME)
     await message.answer(
-        "📁 *Выбери категорию для загрузки фото:*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_admin_categories_keyboard()
+        "Введите название продукта (для отображения пользователям):\n\n"
+        "Пример: «Шампунь для объема L'Oreal Elseve»",
+        reply_markup=get_back_keyboard()
     )
 
-@admin_router.message(AdminState.ADMIN_MAIN_MENU, F.text == "📊 Статистика")
-async def admin_stats(message: Message):
-    """Показать статистику"""
-    count = await photo_db.count_photos()
-    all_photos = await photo_db.get_all_photos()
+@dp.message(AdminState.WAITING_PRODUCT_NAME)
+async def process_product_name(message: Message, state: FSMContext):
+    """Обработка названия продукта"""
+    await state.update_data(display_name=message.text)
+    await state.set_state(AdminState.WAITING_PRODUCT_KEY)
     
-    # Группируем по категориям
-    categories = {}
-    for photo in all_photos:
-        cat = photo['category']
-        categories[cat] = categories.get(cat, 0) + 1
-    
-    stats_text = "📊 *СТАТИСТИКА БАЗЫ ДАННЫХ*\n\n"
-    stats_text += f"📸 *Всего фото:* {count}\n\n"
-    stats_text += "*По категориям:*\n"
-    
-    for cat, cat_count in categories.items():
-        stats_text += f"   • {cat}: {cat_count} фото\n"
-    
-    if count == 0:
-        stats_text += "\n🎀 *База пуста. Загрузи первые фото!*"
+    # Генерируем пример ключа
+    data = await state.get_data()
+    category = data.get('category', '').lower()
+    subcategory = data.get('subcategory', '').lower().replace(' ', '_')
+    name_part = message.text[:20].lower().replace(' ', '_')
+    example_key = f"{category}_{subcategory}_{name_part}_1"
     
     await message.answer(
-        stats_text,
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_admin_main_keyboard()
+        f"Введите уникальный ключ продукта (латинскими буквами, без пробелов):\n\n"
+        f"Пример: <code>{example_key}</code>\n\n"
+        f"Этот ключ используется для идентификации в базе данных.",
+        reply_markup=get_back_keyboard()
     )
 
-@admin_router.message(AdminState.ADMIN_MAIN_MENU, F.text == "👀 Просмотреть базу")
-async def admin_view_database(message: Message):
-    """Просмотр всей базы данных"""
-    all_photos = await photo_db.get_all_photos()
+@dp.message(AdminState.WAITING_PRODUCT_KEY)
+async def process_product_key(message: Message, state: FSMContext):
+    """Обработка ключа продукта"""
+    product_key = message.text.strip()
     
-    if not all_photos:
+    # Проверка формата ключа
+    if ' ' in product_key or not product_key.replace('_', '').isalnum():
         await message.answer(
-            "🎀 *База данных пуста!*\n"
-            "✨ *Загрузи первое фото через меню «Загрузить фото»*",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=create_admin_main_keyboard()
+            "❌ Ключ должен содержать только латинские буквы, цифры и подчеркивания.\n"
+            "Пожалуйста, введите ключ еще раз:",
+            reply_markup=get_back_keyboard()
         )
         return
     
-    # Группируем по категориям
-    grouped = {}
-    for photo in all_photos:
-        cat = photo['category']
-        if cat not in grouped:
-            grouped[cat] = []
-        grouped[cat].append(photo)
+    # Проверка уникальности ключа
+    exists = await photo_database.check_key_exists(product_key)
+    if exists:
+        await message.answer(
+            "❌ Этот ключ уже существует в базе. Пожалуйста, введите другой ключ:",
+            reply_markup=get_back_keyboard()
+        )
+        return
     
-    for category, photos in grouped.items():
-        category_text = f"📁 *{category}*\n\n"
+    await state.update_data(product_key=product_key)
+    await state.set_state(AdminState.WAITING_PHOTO)
+    await message.answer(
+        "📷 Теперь отправьте фото продукта (одним изображением):",
+        reply_markup=get_back_keyboard()
+    )
+
+@dp.message(AdminState.WAITING_PHOTO, F.photo)
+async def process_product_photo(message: Message, state: FSMContext):
+    """Обработка фото продукта"""
+    try:
+        # Получаем данные из состояния
+        data = await state.get_data()
+        category = data.get('category')
+        subcategory = data.get('subcategory')
+        display_name = data.get('display_name')
+        product_key = data.get('product_key')
         
-        for photo in photos:
-            category_text += f"✨ *{photo['display_name']}*\n"
-            category_text += f"   🏷️ Ключ: `{photo['product_key']}`\n"
-            category_text += f"   📂 Подкатегория: {photo['subcategory']}\n"
-            
-            # Форматируем дату
-            if 'uploaded_at' in photo and photo['uploaded_at']:
-                try:
-                    if isinstance(photo['uploaded_at'], str):
-                        upload_date = datetime.fromisoformat(photo['uploaded_at'].replace('Z', '+00:00'))
-                    else:
-                        upload_date = photo['uploaded_at']
-                    
-                    category_text += f"   📅 Загружено: {upload_date.strftime('%d.%m.%Y %H:%M')}\n"
-                except:
-                    category_text += f"   📅 Загружено: {photo['uploaded_at']}\n"
-            
-            category_text += "\n"
+        # Получаем file_id самого большого фото
+        photo = message.photo[-1]
+        file_id = photo.file_id
         
-        # Разбиваем на части, если текст слишком длинный
-        if len(category_text) > 4000:
-            parts = [category_text[i:i+4000] for i in range(0, len(category_text), 4000)]
-            for part in parts:
-                await message.answer(part, parse_mode=ParseMode.MARKDOWN)
-                await asyncio.sleep(0.3)
+        # Сохраняем в базу данных
+        success = await photo_database.save_photo(
+            product_key=product_key,
+            category=category,
+            subcategory=subcategory,
+            display_name=display_name,
+            file_id=file_id
+        )
+        
+        if success:
+            await message.answer(
+                f"✅ <b>Фото успешно загружено!</b>\n\n"
+                f"<b>Ключ:</b> {product_key}\n"
+                f"<b>Категория:</b> {category}\n"
+                f"<b>Подкатегория:</b> {subcategory}\n"
+                f"<b>Название:</b> {display_name}\n\n"
+                "Что дальше?",
+                reply_markup=get_admin_menu_keyboard()
+            )
+            await state.set_state(AdminState.MAIN_MENU)
+            
+            logger.info(f"Загружено новое фото: {product_key}")
         else:
-            await message.answer(category_text, parse_mode=ParseMode.MARKDOWN)
-            await asyncio.sleep(0.3)
+            await message.answer(
+                "❌ Ошибка при сохранении в базу данных. Попробуйте еще раз.",
+                reply_markup=get_admin_menu_keyboard()
+            )
+            await state.set_state(AdminState.MAIN_MENU)
+            
+    except Exception as e:
+        logger.error(f"Ошибка при обработке фото: {e}")
+        await message.answer(
+            "❌ Ошибка при загрузке фото. Попробуйте еще раз.",
+            reply_markup=get_admin_menu_keyboard()
+        )
+        await state.set_state(AdminState.MAIN_MENU)
+
+@dp.message(AdminState.MAIN_MENU, F.text == "📊 Статистика")
+async def process_stats(message: Message):
+    """Показ статистики базы данных"""
+    try:
+        stats = await photo_database.get_stats()
+        
+        stats_text = (
+            "📊 <b>Статистика базы данных</b>\n\n"
+            f"📈 <b>Всего фото:</b> {stats.get('total', 0)}\n\n"
+            f"💇‍♀️ <b>Для волос:</b> {stats.get('hair', 0)}\n"
+            f"💅 <b>Для тела:</b> {stats.get('body', 0)}\n\n"
+            f"🕐 <b>Последнее обновление:</b> {datetime.now().strftime('%H:%M:%S')}"
+        )
+        
+        await message.answer(stats_text, reply_markup=get_admin_menu_keyboard())
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики: {e}")
+        await message.answer("❌ Ошибка при получении статистики.")
+
+@dp.message(AdminState.MAIN_MENU, F.text == "👀 Просмотреть базу")
+async def process_view_database(message: Message):
+    """Просмотр всей базы данных"""
+    try:
+        products = await photo_database.get_all_products()
+        
+        if not products:
+            await message.answer("📭 База данных пуста.", reply_markup=get_admin_menu_keyboard())
+            return
+        
+        # Разбиваем на группы по 10 для удобства чтения
+        for i in range(0, len(products), 10):
+            batch = products[i:i+10]
+            batch_text = "📋 <b>База продуктов</b>\n\n"
+            
+            for idx, product in enumerate(batch, 1):
+                batch_text += (
+                    f"{i+idx}. <b>{product['display_name']}</b>\n"
+                    f"   Ключ: <code>{product['product_key']}</code>\n"
+                    f"   Категория: {product['category']}\n"
+                    f"   Тип: {product['subcategory']}\n"
+                    f"   Загружено: {product['uploaded_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
+                )
+            
+            await message.answer(batch_text, reply_markup=get_admin_menu_keyboard())
+            
+    except Exception as e:
+        logger.error(f"Ошибка при просмотре базы: {e}")
+        await message.answer("❌ Ошибка при получении данных.")
+
+@dp.message(AdminState.MAIN_MENU, F.text == "🗑️ Удалить фото")
+async def process_delete_start(message: Message, state: FSMContext):
+    """Начало процесса удаления фото"""
+    try:
+        # Получаем все продукты для отображения
+        products = await photo_database.get_all_products()
+        
+        if not products:
+            await message.answer("📭 Нет фото для удаления.", reply_markup=get_admin_menu_keyboard())
+            return
+        
+        # Создаем инлайн-клавиатуру
+        keyboard = []
+        for product in products:
+            button_text = f"{product['display_name']} ({product['category']})"
+            callback_data = f"delete_{product['product_key']}"
+            keyboard.append([InlineKeyboardButton(text=button_text, callback_data=callback_data)])
+        
+        keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_delete")])
+        
+        await message.answer(
+            "🗑️ <b>Выберите фото для удаления:</b>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка при начале удаления: {e}")
+        await message.answer("❌ Ошибка при получении списка фото.")
+
+@dp.callback_query(F.data.startswith("delete_"))
+async def process_delete_confirm(callback: CallbackQuery):
+    """Подтверждение удаления фото"""
+    product_key = callback.data.replace("delete_", "")
     
-    await message.answer(
-        "🌸 *Это все фото в базе данных!*\n"
-        "✨ *Хочешь что-то изменить? Используй меню ниже:*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_admin_main_keyboard()
+    # Получаем информацию о продукте
+    product = await photo_database.get_product_by_key(product_key)
+    
+    if not product:
+        await callback.answer("❌ Фото не найдено.")
+        return
+    
+    # Показываем подтверждение
+    confirm_text = (
+        f"❓ <b>Подтвердите удаление</b>\n\n"
+        f"<b>Название:</b> {product['display_name']}\n"
+        f"<b>Ключ:</b> <code>{product['product_key']}</code>\n"
+        f"<b>Категория:</b> {product['category']}\n"
+        f"<b>Тип:</b> {product['subcategory']}\n\n"
+        f"<i>Это действие нельзя отменить!</i>"
     )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"confirm_delete_{product_key}"),
+            InlineKeyboardButton(text="❌ Нет, отмена", callback_data="cancel_delete")
+        ]
+    ])
+    
+    await callback.message.edit_text(confirm_text, reply_markup=keyboard)
+    await callback.answer()
 
-@admin_router.message(AdminState.ADMIN_MAIN_MENU, F.text == "🔙 Выйти из админки")
-async def admin_exit(message: Message, state: FSMContext):
-    """Выход из админ-панели"""
-    await state.clear()
-    await state.set_state(UserState.MAIN_MENU)
-    await message.answer(
-        "🌸 *Вы вышли из админ-панели!*\n"
-        "✨ *Возвращаемся в главное меню:*",
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=create_main_keyboard()
+@dp.callback_query(F.data.startswith("confirm_delete_"))
+async def process_delete_execute(callback: CallbackQuery):
+    """Выполнение удаления фото"""
+    product_key = callback.data.replace("confirm_delete_", "")
+    
+    try:
+        # Удаляем из базы данных
+        success = await photo_database.delete_photo(product_key)
+        
+        if success:
+            await callback.message.edit_text(
+                f"✅ <b>Фото успешно удалено!</b>\n\n"
+                f"Ключ: <code>{product_key}</code>",
+                reply_markup=None
+            )
+            logger.info(f"Удалено фото: {product_key}")
+        else:
+            await callback.message.edit_text(
+                "❌ Ошибка при удалении фото из базы данных.",
+                reply_markup=None
+            )
+    except Exception as e:
+        logger.error(f"Ошибка при удалении фото: {e}")
+        await callback.message.edit_text(
+            "❌ Произошла ошибка при удалении.",
+            reply_markup=None
+        )
+    
+    await callback.answer()
+
+@dp.callback_query(F.data == "cancel_delete")
+async def process_delete_cancel(callback: CallbackQuery):
+    """Отмена удаления"""
+    await callback.message.edit_text(
+        "❌ Удаление отменено.",
+        reply_markup=None
     )
+    await callback.answer()
 
-# Остальные админ-обработчики (сокращенно, так как они длинные)
-# Они остаются без изменений из предыдущего кода
+# ==================== SELF-PING SYSTEM ====================
 
-# =============================================
-# ОБЩИЕ ОБРАБОТЧИКИ
-# =============================================
-
-@dp.message(Command("help"))
-async def cmd_help(message: Message):
-    """Обработчик команды /help"""
-    help_text = """
-    🌸 *ПОМОЩЬ ПО КОМАНДАМ БОТА* ✨
-
-    🎀 *Основные команды:*
-    /start - Начать общение с ботом
-    /help - Показать эту справку
-    /admin - Войти в админ-панель (требуется пароль)
-
-    💖 *Как пользоваться ботом:*
-    1. Нажми /start или кнопку «Начать»
-    2. Выбери категорию: Волосы или Тело
-    3. Ответь на несколько вопросов о своих особенностях
-    4. Получи персонализированные рекомендации с фото продуктов!
-
-    👑 *Для администраторов:*
-    - Войди в админ-панель через меню или команду /admin
-    - Загружай фото продуктов в базу данных
-    - Управляй содержимым базы
-
-    ❓ *Проблемы или вопросы?*
-    Напиши: @svoy_cosmetics_support
-
-    💝 *Приятного пользования!*
-    """
-    await message.answer(help_text, parse_mode=ParseMode.MARKDOWN)
-
-@dp.message(Command("admin"))
-async def cmd_admin(message: Message, state: FSMContext):
-    """Обработчик команды /admin"""
-    await admin_panel_request(message, state)
-
-@dp.message(Command("status"))
-async def cmd_status(message: Message):
-    """Показать статус бота"""
-    count = await photo_db.count_photos()
-    db_status = "✅ Подключена" if photo_db.is_connected else "❌ Отключена"
+async def self_ping():
+    """Функция для self-ping приложения"""
+    global APP_URL
     
-    status_text = f"""
-    🤖 *Статус бота:*
+    if not APP_URL:
+        # Пытаемся получить URL из переменных окружения Render
+        render_url = os.getenv("RENDER_EXTERNAL_URL")
+        if render_url:
+            APP_URL = f"{render_url}/health"
+        else:
+            logger.warning("RENDER_EXTERNAL_URL не установлен, self-ping не работает")
+            return
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(APP_URL, timeout=10) as response:
+                if response.status == 200:
+                    logger.info(f"✅ Self-ping успешен: {APP_URL}")
+                else:
+                    logger.warning(f"⚠️ Self-ping вернул статус {response.status}: {APP_URL}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка self-ping: {e}")
 
-    📊 *База данных:* {db_status}
-    📸 *Фото в базе:* {count}
-    🔔 *Self-ping:* {'✅ Активен' if SELF_PING_URL else '❌ Не активен'}
+def run_scheduler():
+    """Запуск планировщика для self-ping"""
+    # Пингуем сразу при запуске
+    asyncio.run(self_ping())
     
-    🌸 *Бот работает нормально!*
-    """
-    await message.answer(status_text, parse_mode=ParseMode.MARKDOWN)
+    # Запускаем пинг каждые 5 минут
+    schedule.every(5).minutes.do(lambda: asyncio.run(self_ping()))
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
 
-# =============================================
-# ОСНОВНАЯ ФУНКЦИЯ ЗАПУСКА
-# =============================================
+# ==================== ЗАПУСК БОТА ====================
 
-async def shutdown_procedures(health_runner):
-    """Процедуры завершения работы"""
-    logger.info("🔧 Начинаем процедуры завершения...")
+async def on_startup():
+    """Действия при запуске бота"""
+    logger.info("🤖 Бот запускается...")
     
-    # Останавливаем self-ping
-    await stop_self_ping()
+    # Инициализация базы данных
+    await photo_database.init_db()
+    logger.info("🗄️ База данных инициализирована")
     
-    # Останавливаем health server
-    await stop_health_server(health_runner)
+    # Запуск health check сервера
+    keep_alive()
+    logger.info("🌐 Health check сервер запущен")
     
-    # Закрываем соединение с базой данных
-    await photo_db.close()
+    # Запуск self-ping в отдельном потоке
+    scheduler_thread = Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    logger.info("🔔 Self-ping система запущена")
     
-    logger.info("✅ Все процедуры завершения выполнены")
+    # Установка webhook (если нужно) или опрос
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("✅ Бот готов к работе!")
+
+async def on_shutdown():
+    """Действия при выключении бота"""
+    logger.info("🛑 Бот выключается...")
+    await photo_database.close()
+    logger.info("🗄️ Соединение с БД закрыто")
 
 async def main():
     """Основная функция запуска бота"""
-    logger.info("🚀 Запуск бота...")
-    
-    # Обработчик сигналов для корректного завершения
-    loop = asyncio.get_running_loop()
-    
-    def signal_handler():
-        logger.info("🛑 Получен сигнал завершения...")
-        loop.create_task(shutdown())
-    
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        try:
-            loop.add_signal_handler(sig, signal_handler)
-        except NotImplementedError:
-            logger.warning(f"⚠️ Сигнал {sig} не поддерживается на этой платформе")
-    
-    # Инициализируем базу данных
-    logger.info("🔌 Подключаемся к базе данных...")
-    db_success = await photo_db.init_db()
-    
-    if not db_success:
-        logger.error("❌ Не удалось подключиться к базе данных!")
-        logger.info("💡 Проверьте переменную окружения DATABASE_URL")
-        return
-    
-    # Запускаем health server
-    logger.info("🏥 Запускаем health server...")
-    health_runner = await start_health_server()
-    
-    # Запускаем self-ping систему
-    logger.info("🔔 Запускаем self-ping систему...")
-    await start_self_ping()
-    
     try:
-        # Запускаем бота
-        logger.info("🤖 Бот запущен и готов к работе!")
-        logger.info("🌸 Используй /start для начала работы")
-        logger.info("👑 Админ-панель: /admin (пароль: admin2026)")
-        logger.info("📊 Статус: /status")
+        # Регистрация обработчиков startup/shutdown
+        dp.startup.register(on_startup)
+        dp.shutdown.register(on_shutdown)
         
+        logger.info("🚀 Запуск бота...")
+        
+        # Запуск поллинга
         await dp.start_polling(bot, skip_updates=True)
         
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка при запуске бота: {e}")
-        
+        logger.error(f"❌ Критическая ошибка: {e}")
     finally:
-        await shutdown_procedures(health_runner)
-
-async def shutdown():
-    """Корректное завершение работы"""
-    logger.info("🛑 Завершение работы бота...")
-    
-    # Останавливаем polling
-    await dp.stop_polling()
-    
-    # Даем время на завершение текущих операций
-    await asyncio.sleep(1)
-    
-    logger.info("✅ Бот остановлен")
-    sys.exit(0)
+        await bot.session.close()
 
 if __name__ == "__main__":
-    # Проверяем наличие токена
-    if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN не установлен! Укажите его в переменных окружения.")
-        sys.exit(1)
-    
-    # Запускаем основную функцию
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("👋 Завершение по Ctrl+C")
+        logger.info("Бот остановлен пользователем")
     except Exception as e:
-        logger.error(f"💥 Непредвиденная ошибка: {e}")
+        logger.error(f"Необработанное исключение: {e}")
