@@ -889,7 +889,11 @@ async def on_startup():
     # Инициализация базы данных
     db_connected = await photo_db.init_db()
     logger.info(f"📊 Статус подключения к БД: {db_connected}")
+    
     if db_connected:
+        # Проверяем структуру таблицы
+        await photo_db.check_table_structure()
+        
         photo_count = await photo_db.count_photos()
         logger.info(f"📸 Фото в базе: {photo_count}")
 
