@@ -3,6 +3,8 @@ USER_STORAGE.PY - Хранилище данных пользователей
 """
 
 from typing import Dict, Any
+import json
+from datetime import datetime
 
 # Простое хранилище в памяти
 user_data = {}
@@ -50,6 +52,19 @@ def clear_selected_problems(user_id: int):
     """Очистить список выбранных проблем"""
     if user_id in user_data and "selected_problems" in user_data[user_id]:
         user_data[user_id]["selected_problems"] = []
+
+def get_user_history(user_id: int):
+    """Получить историю выбора пользователя"""
+    data = get_user_data(user_id)
+    return {
+        "hair_type": data.get("hair_type"),
+        "scalp_type": data.get("scalp_type"),
+        "hair_volume": data.get("hair_volume"),
+        "hair_color": data.get("hair_color"),
+        "problems": data.get("selected_problems", []),
+        "body_goal": data.get("body_goal"),
+        "last_consultation": datetime.now().isoformat()
+    }
 
 class UserDataStorage:
     """Класс для совместимости"""
