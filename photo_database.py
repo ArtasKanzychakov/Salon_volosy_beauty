@@ -19,7 +19,7 @@ class PhotoDatabase:
     async def init_db(self) -> bool:
         """Инициализация подключения к базе данных"""
         database_url = os.environ.get("DATABASE_URL")
-        
+
         if not database_url:
             logger.error("❌ DATABASE_URL не установлен!")
             return False
@@ -30,7 +30,7 @@ class PhotoDatabase:
                 database_url = database_url.replace("postgres://", "postgresql://", 1)
 
             logger.info("🔄 Подключение к PostgreSQL...")
-            
+
             self.pool = await asyncpg.create_pool(
                 dsn=database_url,
                 min_size=1,
@@ -51,7 +51,7 @@ class PhotoDatabase:
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 ''')
-                
+
                 logger.info("✅ Таблица product_photos создана/проверена")
 
             self.is_connected = True
@@ -159,8 +159,3 @@ class PhotoDatabase:
         """Закрытие соединения с базой данных"""
         if self.pool:
             await self.pool.close()
-            self.is_connected = False
-            logger.info("🔌 Соединение с базой данных закрыто")
-
-# Глобальный экземпляр
-photo_db = PhotoDatabase()
