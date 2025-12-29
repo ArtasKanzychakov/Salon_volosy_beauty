@@ -24,4 +24,4 @@ services:
           property: url
     autoDeploy: true
     healthCheckPath: /health
-    healthCheckTimeout: 180
+    healthCheckTimeout: 10  # Уменьшите таймаут!
