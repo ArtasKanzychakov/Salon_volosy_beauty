@@ -866,3 +866,148 @@ if __name__ == "__main__":
         logger.info("👋 Бот остановлен пользователем")
     except Exception as e:
         logger.error(f"⚠️ Необработанное исключение: {e}", exc_info=True)
+# ==================== HEALTH CHECK СЕРВЕР ====================
+
+async def start_health_server():
+    """Запуск health check сервера в отдельной задаче"""
+    from aiohttp import web
+    
+    async def health_handler(request):
+        return web.Response(text='OK')
+    
+    app = web.Application()
+    app.router.add_get('/health', health_handler)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Render автоматически назначает порт через переменную PORT
+    port = int(os.getenv('PORT', 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    logger.info(f"🌐 Health check сервер запущен на порту {port}")
+    return runner
+
+async def health_server_task():
+    """Задача для запуска health check сервера"""
+    try:
+        runner = await start_health_server()
+        logger.info("✅ Health check сервер успешно запущен")
+        
+        # Держим сервер запущенным
+        while True:
+            await asyncio.sleep(3600)  # Спим 1 час
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска health check сервера: {e}")
+
+# ==================== SELF-PING СИСТЕМА ====================
+
+async def self_ping():
+    """Функция для self-ping приложения"""
+    try:
+        # Получаем URL из переменных окружения Render
+        external_url = os.getenv("RENDER_EXTERNAL_URL")
+        
+        if not external_url:
+            # Если URL нет в переменных, логируем предупреждение
+            logger.warning("⚠️ RENDER_EXTERNAL_URL не установлен, self-ping может не работать")
+            return False
+        
+        ping_url = f"{external_url}/health"
+        logger.info(f"🔗 Пингую: {ping_url}")
+        
+        timeout = aiohttp.ClientTimeout(total=10)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(ping_url) as response:
+                if response.status == 200:
+                    logger.info(f"✅ Self-ping успешен: {datetime.now().strftime('%H:%M:%S')}")
+                    return True
+                else:
+                    logger.warning(f"⚠️ Self-ping вернул статус {response.status}")
+                    return False
+    except Exception as e:
+        logger.error(f"❌ Ошибка self-ping: {str(e)[:100]}")
+        return False
+
+async def self_ping_task():
+    """Постоянная задача для self-ping"""
+    logger.info("🔔 Self-ping задача запущена")
+    
+    # Ждем 15 секунд после старта чтобы серверы успели подняться
+    await asyncio.sleep(15)
+    
+    # Первый пинг
+    await self_ping()
+    
+    # Затем каждые 4 минуты (240 секунд) - чаще, чем 5 минут!
+    while True:
+        try:
+            await asyncio.sleep(240)  # 4 минуты
+            await self_ping()
+        except asyncio.CancelledError:
+            logger.info("🔔 Self-ping задача остановлена")
+            break
+        except Exception as e:
+            logger.error(f"❌ Ошибка в self_ping_task: {e}")
+            await asyncio.sleep(60)  # Ждем минуту при ошибке
+
+# ==================== ЗАПУСК БОТА ====================
+
+async def on_startup():
+    """Действия при запуске бота"""
+    logger.info("🤖 Бот запускается...")
+
+    # Инициализация базы данных
+    db_connected = await photo_db.init_db()
+    logger.info(f"📊 Статус подключения к БД: {db_connected}")
+
+    if db_connected:
+        photo_count = await photo_db.count_photos()
+        logger.info(f"📸 Фото в базе: {photo_count}")
+
+    # ЗАПУСК HEALTH CHECK СЕРВЕРА (ВАЖНО!)
+    asyncio.create_task(health_server_task())
+    logger.info("🌐 Health check сервер запускается...")
+
+    # ЗАПУСК SELF-PING СИСТЕМЫ
+    asyncio.create_task(self_ping_task())
+    logger.info("🔔 Self-ping система активирована")
+
+    # Установка webhook или опроса
+    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("✅ Бот готов к работе!")
+
+async def on_shutdown():
+    """Действия при выключении бота"""
+    logger.info("🛑 Бот выключается...")
+    await photo_db.close()
+    logger.info("🗄️ Соединение с БД закрыто")
+
+async def main():
+    """Основная функция запуска бота"""
+    try:
+        # Регистрация обработчиков startup/shutdown
+        dp.startup.register(on_startup)
+        dp.shutdown.register(on_shutdown)
+
+        logger.info("🚀 Запуск бота с работающим health check...")
+
+        # Запуск поллинга
+        await dp.start_polling(
+            bot, 
+            skip_updates=True,
+            allowed_updates=dp.resolve_used_update_types()
+        )
+
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
+        raise
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("👋 Бот остановлен пользователем")
+    except Exception as e:
+        logger.error(f"⚠️ Необработанное исключение: {e}", exc_info=True)
