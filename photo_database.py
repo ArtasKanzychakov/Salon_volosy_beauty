@@ -9,6 +9,11 @@ class PhotoDatabase:
     def __init__(self):
         self.pool: asyncpg.Pool | None = None
 
+    @property
+    def is_connected(self) -> bool:
+        """Проверка подключения к базе данных"""
+        return self.pool is not None
+
     async def init(self):
         """
         Инициализация пула и таблицы.
@@ -88,9 +93,24 @@ class PhotoDatabase:
 
             return row["file_id"] if row else None
 
+    async def get_photos_by_category(self, category: str) -> list[dict]:
+        if not self.pool:
+            return []
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT product_key, category, subcategory,
+                       display_name, file_id, created_at
+                FROM product_photos
+                WHERE category = $1
+                ORDER BY created_at DESC
+            """, category)
+
+            return [dict(row) for row in rows]
+
     async def get_all_photos(self) -> list[dict]:
         if not self.pool:
-            raise RuntimeError("Database not initialized")
+            return []
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
@@ -101,6 +121,14 @@ class PhotoDatabase:
             """)
 
             return [dict(row) for row in rows]
+
+    async def count_photos(self) -> int:
+        if not self.pool:
+            return 0
+
+        async with self.pool.acquire() as conn:
+            result = await conn.fetchval("SELECT COUNT(*) FROM product_photos")
+            return result or 0
 
     async def close(self):
         if self.pool:
