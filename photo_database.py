@@ -12,10 +12,10 @@ class PhotoDatabase:
     async def init(self):
         """
         Инициализация пула и таблицы.
-        Вызывается один раз при старте бота.
+        Вызывается ОДИН раз при старте бота.
         """
         if self.pool:
-            return  # уже инициализировано
+            return
 
         database_url = os.getenv("DATABASE_URL")
         if not database_url:
@@ -57,9 +57,6 @@ class PhotoDatabase:
         subcategory: str | None = None,
         display_name: str | None = None
     ):
-        """
-        Сохраняет или обновляет фото по product_key.
-        """
         if not self.pool:
             raise RuntimeError("Database not initialized")
 
@@ -79,9 +76,6 @@ class PhotoDatabase:
             """, product_key, category, subcategory, display_name, file_id)
 
     async def get_photo_id(self, product_key: str) -> str | None:
-        """
-        Возвращает file_id по ключу продукта.
-        """
         if not self.pool:
             raise RuntimeError("Database not initialized")
 
@@ -95,15 +89,13 @@ class PhotoDatabase:
             return row["file_id"] if row else None
 
     async def get_all_photos(self) -> list[dict]:
-        """
-        Используется для админки / отладки.
-        """
         if not self.pool:
             raise RuntimeError("Database not initialized")
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
-                SELECT product_key, category, subcategory, display_name, file_id, created_at
+                SELECT product_key, category, subcategory,
+                       display_name, file_id, created_at
                 FROM product_photos
                 ORDER BY created_at DESC
             """)
@@ -115,5 +107,7 @@ class PhotoDatabase:
             await self.pool.close()
             self.pool = None
             logger.info("🛑 Photo database connection closed")
-            # Глобальный singleton для использования в боте
+
+
+# ✅ ГЛОБАЛЬНЫЙ SINGLETON (ОБЯЗАТЕЛЬНО ВНЕ КЛАССА)
 photo_db = PhotoDatabase()
