@@ -1,10 +1,11 @@
 import asyncpg
 import os
+from typing import Optional
 
 
 class PhotoDatabase:
     def __init__(self):
-        self.pool: asyncpg.Pool | None = None
+        self.pool: Optional[asyncpg.Pool] = None
 
     async def connect(self):
         self.pool = await asyncpg.create_pool(
@@ -13,13 +14,15 @@ class PhotoDatabase:
             database=os.getenv("DB_NAME"),
             host=os.getenv("DB_HOST"),
             port=os.getenv("DB_PORT"),
-            ssl="require"
+            ssl="require",
+            min_size=1,
+            max_size=5
         )
         await self.init_db()
 
     async def init_db(self):
         async with self.pool.acquire() as conn:
-            # ❗ НИ В КОЕМ СЛУЧАЕ НЕ DROP TABLE
+            # ❗ НИКАКИХ DROP TABLE
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS product_photos (
                     id SERIAL PRIMARY KEY,
@@ -39,23 +42,27 @@ class PhotoDatabase:
         subcategory: str,
         display_name: str,
         file_id: str
-    ):
+    ) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO product_photos (
-                    product_key, category, subcategory, display_name, file_id
+                    product_key,
+                    category,
+                    subcategory,
+                    display_name,
+                    file_id
                 )
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (product_key)
                 DO UPDATE SET
-                    file_id = EXCLUDED.file_id,
-                    display_name = EXCLUDED.display_name,
                     category = EXCLUDED.category,
                     subcategory = EXCLUDED.subcategory,
+                    display_name = EXCLUDED.display_name,
+                    file_id = EXCLUDED.file_id,
                     created_at = CURRENT_TIMESTAMP
             """, product_key, category, subcategory, display_name, file_id)
 
-    async def get_photo_id(self, product_key: str) -> str | None:
+    async def get_photo_id(self, product_key: str) -> Optional[str]:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow("""
                 SELECT file_id
@@ -66,3 +73,12 @@ class PhotoDatabase:
             if row:
                 return row["file_id"]
             return None
+
+    async def list_all(self):
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT product_key, display_name
+                FROM product_photos
+                ORDER BY created_at DESC
+            """)
+            return rows
