@@ -49,8 +49,12 @@ async def start_health_server():
     async def health_handler(request):
         return web.Response(text='OK')
     
+    async def index_handler(request):
+        return web.Response(text='Bot is running!')
+    
     app = web.Application()
     app.router.add_get('/health', health_handler)
+    app.router.add_get('/', index_handler)
     
     runner = web.AppRunner(app)
     await runner.setup()
@@ -844,15 +848,16 @@ async def on_startup():
     # Инициализация базы данных
     try:
         await photo_db.init()
-        db_connected = photo_db.is_connected
-        logger.info(f"📊 Статус подключения к БД: {db_connected}")
-
-        if db_connected:
+        logger.info(f"📊 Статус подключения к БД: {photo_db.is_connected}")
+        
+        if photo_db.is_connected:
             photo_count = await photo_db.count_photos()
             logger.info(f"📸 Фото в базе: {photo_count}")
+        else:
+            logger.warning("⚠️ База данных не подключена")
+            
     except Exception as e:
         logger.error(f"❌ Ошибка при инициализации БД: {e}")
-        db_connected = False
 
     # ЗАПУСК HEALTH CHECK СЕРВЕРА
     try:
