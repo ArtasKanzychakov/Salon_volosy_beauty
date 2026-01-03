@@ -40,6 +40,38 @@ bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseM
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ БД ====================
+
+def is_db_connected():
+    """Безопасная проверка подключения к БД"""
+    try:
+        # Проверяем, есть ли у объекта свойство is_connected
+        if hasattr(photo_db, 'is_connected'):
+            return photo_db.is_connected
+        # Или проверяем наличие пула
+        elif hasattr(photo_db, 'pool'):
+            return photo_db.pool is not None
+        else:
+            return False
+    except Exception:
+        return False
+
+async def safe_db_init():
+    """Безопасная инициализация БД"""
+    try:
+        if hasattr(photo_db, 'init'):
+            await photo_db.init()
+            return True
+        elif hasattr(photo_db, 'init_db'):
+            await photo_db.init_db()
+            return True
+        else:
+            logger.error("❌ Не найден метод инициализации БД")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации БД: {e}")
+        return False
+
 # ==================== HEALTH CHECK СЕРВЕР ====================
 
 async def start_health_server():
@@ -52,9 +84,13 @@ async def start_health_server():
     async def index_handler(request):
         return web.Response(text='Bot is running!')
     
+    async def robots_handler(request):
+        return web.Response(text='User-agent: *\nDisallow:')
+    
     app = web.Application()
     app.router.add_get('/health', health_handler)
     app.router.add_get('/', index_handler)
+    app.router.add_get('/robots.txt', robots_handler)
     
     runner = web.AppRunner(app)
     await runner.setup()
@@ -148,7 +184,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
             )
             return
 
-        if not photo_db.is_connected:
+        if not is_db_connected():
             await bot.send_message(
                 chat_id, 
                 "🔄 База данных обновляется. Попробуйте позже.",
@@ -253,10 +289,10 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
 
 @dp.update.middleware()
 async def check_db_middleware(handler, event, data):
-    if not photo_db.is_connected:
+    if not is_db_connected():
         logger.warning("⚠️ БД не подключена, пытаемся переподключиться...")
         try:
-            await photo_db.init()
+            await safe_db_init()
         except Exception as e:
             logger.error(f"❌ Ошибка при переподключении БД: {e}")
     return await handler(event, data)
@@ -316,15 +352,18 @@ async def cmd_help(message: Message):
 @dp.message(Command("status"))
 async def cmd_status(message: Message):
     try:
-        db_status = photo_db.is_connected
+        db_status = is_db_connected()
         photo_count = 0
         hair_photos = []
         body_photos = []
 
         if db_status:
-            photo_count = await photo_db.count_photos()
-            hair_photos = await photo_db.get_photos_by_category("волосы")
-            body_photos = await photo_db.get_photos_by_category("тело")
+            try:
+                photo_count = await photo_db.count_photos()
+                hair_photos = await photo_db.get_photos_by_category("волосы")
+                body_photos = await photo_db.get_photos_by_category("тело")
+            except Exception as e:
+                logger.error(f"❌ Ошибка получения статистики БД: {e}")
 
         status_text = (
             "📊 <b>Статус системы</b>\n\n"
@@ -350,13 +389,16 @@ async def cmd_status(message: Message):
 @dp.message(Command("dbcheck"))
 async def cmd_dbcheck(message: Message):
     try:
-        db_connected = photo_db.is_connected
+        db_connected = is_db_connected()
         photo_count = 0
         all_photos = []
 
         if db_connected:
-            photo_count = await photo_db.count_photos()
-            all_photos = await photo_db.get_all_photos()
+            try:
+                photo_count = await photo_db.count_photos()
+                all_photos = await photo_db.get_all_photos()
+            except Exception as e:
+                logger.error(f"❌ Ошибка проверки БД: {e}")
 
         check_text = (
             "🔍 <b>Проверка базы данных</b>\n\n"
@@ -654,9 +696,12 @@ async def process_admin_stats(message: Message):
         photo_count = 0
         all_photos = []
 
-        if photo_db.is_connected:
-            photo_count = await photo_db.count_photos()
-            all_photos = await photo_db.get_all_photos()
+        if is_db_connected():
+            try:
+                photo_count = await photo_db.count_photos()
+                all_photos = await photo_db.get_all_photos()
+            except Exception as e:
+                logger.error(f"❌ Ошибка получения статистики БД: {e}")
 
         stats_text = "📊 <b>Статистика базы данных</b>\n\n"
         stats_text += f"📈 <b>Всего фото:</b> {photo_count}\n\n"
@@ -796,8 +841,11 @@ async def process_admin_photo(message: Message, state: FSMContext):
 
         if success:
             photo_count = 0
-            if photo_db.is_connected:
-                photo_count = await photo_db.count_photos()
+            if is_db_connected():
+                try:
+                    photo_count = await photo_db.count_photos()
+                except Exception:
+                    pass
             await message.answer(
                 f"✅ <b>Фото успешно загружено!</b>\n\n"
                 f"<b>Продукт:</b> {display_name}\n"
@@ -847,12 +895,16 @@ async def on_startup():
 
     # Инициализация базы данных
     try:
-        await photo_db.init()
-        logger.info(f"📊 Статус подключения к БД: {photo_db.is_connected}")
+        await safe_db_init()
+        logger.info(f"📊 База данных инициализирована")
         
-        if photo_db.is_connected:
-            photo_count = await photo_db.count_photos()
-            logger.info(f"📸 Фото в базе: {photo_count}")
+        # Проверяем подключение
+        if is_db_connected():
+            try:
+                photo_count = await photo_db.count_photos()
+                logger.info(f"📸 Фото в базе: {photo_count}")
+            except Exception as e:
+                logger.warning(f"⚠️ Не удалось получить количество фото: {e}")
         else:
             logger.warning("⚠️ База данных не подключена")
             
@@ -877,8 +929,12 @@ async def on_startup():
 async def on_shutdown():
     """Действия при выключении бота"""
     logger.info("🛑 Бот выключается...")
-    await photo_db.close()
-    logger.info("🗄️ Соединение с БД закрыто")
+    try:
+        if hasattr(photo_db, 'close'):
+            await photo_db.close()
+            logger.info("🗄️ Соединение с БД закрыто")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при закрытии БД: {e}")
 
 async def main():
     """Основная функция запуска бота"""
