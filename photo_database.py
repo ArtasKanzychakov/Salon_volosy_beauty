@@ -115,3 +115,5 @@ class PhotoDatabase:
             await self.pool.close()
             self.pool = None
             logger.info("🛑 Photo database connection closed")
+            # Глобальный singleton для использования в боте
+photo_db = PhotoDatabase()
