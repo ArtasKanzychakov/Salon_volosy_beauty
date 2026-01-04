@@ -20,6 +20,14 @@ def back_to_menu_keyboard() -> ReplyKeyboardMarkup:
     builder.add(KeyboardButton(text="🏠 Главное меню"))
     return builder.as_markup(resize_keyboard=True)
 
+def selection_complete_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура после завершения подборки"""
+    builder = ReplyKeyboardBuilder()
+    builder.add(KeyboardButton(text="🔄 Новая подборка"))
+    builder.add(KeyboardButton(text="🏠 Главное меню"))
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
+
 def body_goals_keyboard() -> ReplyKeyboardMarkup:
     """Цели ухода за телом"""
     builder = ReplyKeyboardBuilder()
@@ -123,4 +131,10 @@ def admin_products_keyboard(category: str, subcategory: str) -> ReplyKeyboardMar
 
     builder.add(KeyboardButton(text="↩️ Назад к подкатегориям"))
     builder.adjust(1)
+    return builder.as_markup(resize_keyboard=True)
+
+def admin_cancel_photo_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура для отмены загрузки фото"""
+    builder = ReplyKeyboardBuilder()
+    builder.add(KeyboardButton(text="❌ Отмена"))
     return builder.as_markup(resize_keyboard=True)
