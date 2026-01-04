@@ -16,12 +16,7 @@ services:
       - key: ADMIN_PASSWORD
         value: "admin2026"
       - key: PORT
-        value: "10000"  # Явно указать порт
-      - key: RENDER_EXTERNAL_URL
-        fromService:
-          type: web
-          name: salon-volosy-beauty
-          property: url
+        value: "10000"
     autoDeploy: true
     healthCheckPath: /health
     healthCheckTimeout: 180
