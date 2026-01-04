@@ -42,7 +42,7 @@ dp = Dispatcher(storage=storage)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ БД ====================
 
-def is_db_connected():
+def is_db_connected() -> bool:
     """Безопасная проверка подключения к БД"""
     try:
         # Проверяем, есть ли у объекта свойство is_connected
@@ -50,24 +50,19 @@ def is_db_connected():
             return photo_db.is_connected
         # Или проверяем наличие пула
         elif hasattr(photo_db, 'pool'):
-            return photo_db.pool is not None
+            return photo_db.pool is not None and not photo_db.pool._closed
         else:
             return False
-    except Exception:
+    except Exception as e:
+        logger.error(f"❌ Ошибка проверки подключения БД: {e}")
         return False
 
-async def safe_db_init():
+async def safe_db_init() -> bool:
     """Безопасная инициализация БД"""
     try:
-        if hasattr(photo_db, 'init'):
-            await photo_db.init()
-            return True
-        elif hasattr(photo_db, 'init_db'):
-            await photo_db.init_db()
-            return True
-        else:
-            logger.error("❌ Не найден метод инициализации БД")
-            return False
+        await photo_db.init()
+        logger.info("✅ База данных инициализирована")
+        return True
     except Exception as e:
         logger.error(f"❌ Ошибка инициализации БД: {e}")
         return False
@@ -77,28 +72,28 @@ async def safe_db_init():
 async def start_health_server():
     """Запуск health check сервера"""
     from aiohttp import web
-    
+
     async def health_handler(request):
         return web.Response(text='OK')
-    
+
     async def index_handler(request):
         return web.Response(text='Bot is running!')
-    
+
     async def robots_handler(request):
         return web.Response(text='User-agent: *\nDisallow:')
-    
+
     app = web.Application()
     app.router.add_get('/health', health_handler)
     app.router.add_get('/', index_handler)
     app.router.add_get('/robots.txt', robots_handler)
-    
+
     runner = web.AppRunner(app)
     await runner.setup()
-    
+
     port = int(os.getenv('PORT', 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    
+
     logger.info(f"🌐 Health check сервер запущен на порту {port}")
     return runner
 
@@ -108,16 +103,16 @@ async def self_ping():
     """Функция для self-ping приложения"""
     try:
         external_url = os.getenv("RENDER_EXTERNAL_URL")
-        
+
         if not external_url:
             logger.warning("⚠️ RENDER_EXTERNAL_URL не установлен")
             # Пробуем определить из логики Render
             service_name = os.getenv("RENDER_SERVICE_NAME", "salon-volosy-beauty")
             external_url = f"https://{service_name}.onrender.com"
-        
+
         ping_url = f"{external_url}/health"
         logger.debug(f"🔗 Пингую: {ping_url}")
-        
+
         timeout = aiohttp.ClientTimeout(total=10)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(ping_url) as response:
@@ -134,13 +129,13 @@ async def self_ping():
 async def self_ping_task():
     """Постоянная задача для self-ping"""
     logger.info("🔔 Self-ping задача запущена")
-    
+
     # Ждем 15 секунд после старта
     await asyncio.sleep(15)
-    
+
     # Первый пинг
     await self_ping()
-    
+
     # Затем каждые 4 минуты
     while True:
         try:
@@ -155,32 +150,14 @@ async def self_ping_task():
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
-def new_selection_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура для новой подборки"""
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="🔄 Новая подборка"))
-    builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
-    return builder.as_markup(resize_keyboard=True)
-
-def final_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Финальное меню после рекомендаций"""
-    builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="🔄 Новая подборка"))
-    builder.add(KeyboardButton(text="💇‍♀️ Волосы"))
-    builder.add(KeyboardButton(text="🧴 Тело"))
-    builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
-    return builder.as_markup(resize_keyboard=True)
-
 async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: str = ""):
     """Отправка рекомендованных фото"""
     try:
         if not photo_keys:
             await bot.send_message(
                 chat_id, 
-                "📷 Фото продуктов для этих рекомендаций пока не загружены.",
-                reply_markup=final_menu_keyboard()
+                "📷 Фото продуктов для этих рекомендаций пока не загружены.\n\nАдминистратор скоро добавит фотографии!",
+                reply_markup=keyboards.selection_complete_keyboard()
             )
             return
 
@@ -188,7 +165,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
             await bot.send_message(
                 chat_id, 
                 "🔄 База данных обновляется. Попробуйте позже.",
-                reply_markup=final_menu_keyboard()
+                reply_markup=keyboards.selection_complete_keyboard()
             )
             return
 
@@ -197,6 +174,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
             file_id = await photo_db.get_photo_id(photo_key)
             if file_id:
                 display_name = photo_key
+                # Ищем отображаемое имя в структуре фото
                 for category in config.PHOTO_STRUCTURE.values():
                     for subcat_products in category.values():
                         for key, name in subcat_products:
@@ -211,13 +189,13 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                     parse_mode=ParseMode.HTML
                 )
                 sent_count += 1
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.5)  # Небольшая задержка между фото
 
         if sent_count == 0:
             await bot.send_message(
                 chat_id,
                 "📷 Фото продуктов временно недоступны.\n\nАдминистратор еще не загрузил фотографии для этих продуктов.",
-                reply_markup=final_menu_keyboard()
+                reply_markup=keyboards.selection_complete_keyboard()
             )
 
     except Exception as e:
@@ -225,7 +203,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
         await bot.send_message(
             chat_id,
             "❌ Произошла ошибка при отправке фото.",
-            reply_markup=final_menu_keyboard()
+            reply_markup=keyboards.selection_complete_keyboard()
         )
 
 async def get_body_recommendations_with_photos(goal: str) -> tuple:
@@ -256,21 +234,26 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
         text = config.get_hair_recommendations_html(hair_type, problems, scalp_type, hair_volume, hair_color)
         photo_keys = []
 
+        # Добавляем фото по типу волос
         if hair_type in config.PHOTO_MAPPING.get("волосы", {}):
             photo_keys.extend(config.PHOTO_MAPPING["волосы"][hair_type])
 
+        # Добавляем фото по проблемам
         for problem in problems:
             if problem in config.PHOTO_MAPPING.get("волосы", {}):
                 photo_keys.extend(config.PHOTO_MAPPING["волосы"][problem])
 
+        # Добавляем фото для чувствительной кожи
         if scalp_type == "Да, чувствительная":
             sensitive_keys = config.PHOTO_MAPPING["волосы"].get("чувствительная_кожа", [])
             photo_keys.extend(sensitive_keys)
 
+        # Добавляем фото для объема
         if hair_volume == "Да, хочу объем":
             volume_keys = config.PHOTO_MAPPING["волосы"].get("объем", [])
             photo_keys.extend(volume_keys)
 
+        # Добавляем фото по цвету волос
         if hair_color in ["Шатенка", "Русая"]:
             chocolate_keys = config.PHOTO_MAPPING["волосы"].get("оттеночная_шоколад", [])
             photo_keys.extend(chocolate_keys)
@@ -278,6 +261,7 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
             copper_keys = config.PHOTO_MAPPING["волосы"].get("оттеночная_медный", [])
             photo_keys.extend(copper_keys)
 
+        # Убираем дубликаты
         photo_keys = list(set(photo_keys))
         return text, photo_keys
 
@@ -288,13 +272,37 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
 # ==================== МИДЛВЕЙР ДЛЯ ПРОВЕРКИ БД ====================
 
 @dp.update.middleware()
-async def check_db_middleware(handler, event, data):
-    if not is_db_connected():
-        logger.warning("⚠️ БД не подключена, пытаемся переподключиться...")
-        try:
-            await safe_db_init()
-        except Exception as e:
-            logger.error(f"❌ Ошибка при переподключении БД: {e}")
+async def database_middleware(handler, event, data):
+    """Middleware для проверки и восстановления подключения к БД"""
+    try:
+        # Проверяем подключение к БД
+        if not is_db_connected():
+            logger.warning("⚠️ Database connection lost, attempting to reconnect...")
+            
+            # Пробуем переподключиться
+            try:
+                if await safe_db_init():
+                    logger.info("✅ Database reconnected successfully")
+            except Exception as e:
+                logger.error(f"❌ Reconnection failed: {e}")
+                    
+        # Проверяем, что БД доступна для запросов
+        if is_db_connected():
+            # Тестовый запрос для проверки работоспособности
+            try:
+                await asyncio.wait_for(photo_db.count_photos(), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.warning(f"⚠️ Database query test failed: {e}")
+                # Закрываем пул, чтобы при следующем запросе попытались переподключиться
+                if hasattr(photo_db, 'pool') and photo_db.pool:
+                    try:
+                        await photo_db.close()
+                    except:
+                        pass
+    except Exception as e:
+        logger.error(f"❌ Error in database middleware: {e}")
+    
+    # Продолжаем обработку
     return await handler(event, data)
 
 # ==================== КОМАНДЫ БОТА ====================
@@ -489,7 +497,7 @@ async def process_body_goal(message: Message, state: FSMContext):
         await message.answer(
             recommendations,
             parse_mode=ParseMode.HTML,
-            reply_markup=final_menu_keyboard()
+            reply_markup=keyboards.selection_complete_keyboard()
         )
 
         if photo_keys:
@@ -501,13 +509,13 @@ async def process_body_goal(message: Message, state: FSMContext):
         else:
             await message.answer(
                 "📷 Фото продуктов для этой категории пока не загружены.",
-                reply_markup=final_menu_keyboard()
+                reply_markup=keyboards.selection_complete_keyboard()
             )
 
         await message.answer(
             config.SALES_POINTS + "\n\n" + config.DELIVERY_INFO,
             parse_mode=ParseMode.HTML,
-            reply_markup=final_menu_keyboard()
+            reply_markup=keyboards.selection_complete_keyboard()
         )
 
         await state.clear()
@@ -517,7 +525,7 @@ async def process_body_goal(message: Message, state: FSMContext):
         logger.error(f"❌ Ошибка в process_body_goal: {e}")
         await message.answer(
             "❌ Произошла ошибка. Попробуйте позже.",
-            reply_markup=final_menu_keyboard()
+            reply_markup=keyboards.selection_complete_keyboard()
         )
         await state.clear()
 
@@ -532,7 +540,8 @@ async def process_hair_type(message: Message, state: FSMContext):
     await message.answer(
         f"✅ <b>{hair_type}</b>\n\n"
         "<i>Теперь выберите проблемы волос (можно несколько):</i>\n"
-        "<b>Нажмите на проблему, чтобы выбрать/отменить</b>",
+        "<b>Нажмите на проблему, чтобы выбрать/отменить</b>\n\n"
+        "<i>Можно нажать '✅ Готово' без выбора проблем</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=keyboards.hair_problems_keyboard([])
     )
@@ -545,13 +554,7 @@ async def process_hair_problems(message: Message, state: FSMContext):
         selected_problems = get_selected_problems(message.from_user.id)
         logger.info(f"Выбрано проблем: {selected_problems}")
 
-        if not selected_problems:
-            await message.answer(
-                "❌ Пожалуйста, выберите хотя бы одну проблему.",
-                reply_markup=keyboards.hair_problems_keyboard([])
-            )
-            return
-
+        # Проблемы НЕ обязательны - убрали проверку на пустой список
         await state.set_state(UserState.HAIR_CHOOSING_SCALP)
         await message.answer(
             "<i>Чувствительная кожа головы?</i>",
@@ -577,7 +580,8 @@ async def process_hair_problems(message: Message, state: FSMContext):
 
         await message.answer(
             "<i>Выберите проблемы волос (можно несколько):</i>\n"
-            "<b>Нажмите на проблему, чтобы выбрать/отменить</b>",
+            "<b>Нажмите на проблему, чтобы выбрать/отменить</b>\n\n"
+            "<i>Можно нажать '✅ Готово' без выбора проблем</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=keyboards.hair_problems_keyboard(get_selected_problems(message.from_user.id))
         )
@@ -639,7 +643,7 @@ async def show_hair_results(message: Message, state: FSMContext):
         await message.answer(
             recommendations,
             parse_mode=ParseMode.HTML,
-            reply_markup=final_menu_keyboard()
+            reply_markup=keyboards.selection_complete_keyboard()
         )
 
         if photo_keys:
@@ -651,13 +655,13 @@ async def show_hair_results(message: Message, state: FSMContext):
         else:
             await message.answer(
                 "📷 Фото продуктов для этих рекомендаций пока не загружены.",
-                reply_markup=final_menu_keyboard()
+                reply_markup=keyboards.selection_complete_keyboard()
             )
 
         await message.answer(
             config.SALES_POINTS + "\n\n" + config.DELIVERY_INFO,
             parse_mode=ParseMode.HTML,
-            reply_markup=final_menu_keyboard()
+            reply_markup=keyboards.selection_complete_keyboard()
         )
 
         await state.clear()
@@ -668,7 +672,7 @@ async def show_hair_results(message: Message, state: FSMContext):
         logger.error(f"❌ Ошибка в show_hair_results: {e}", exc_info=True)
         await message.answer(
             "❌ Произошла ошибка при формировании рекомендаций. Попробуйте позже.",
-            reply_markup=final_menu_keyboard()
+            reply_markup=keyboards.selection_complete_keyboard()
         )
         await state.clear()
 
@@ -793,10 +797,7 @@ async def process_admin_product(message: Message, state: FSMContext):
         f"<b>Подкатегория:</b> {subcategory}\n\n"
         f"<i>Отправьте одно фото.</i>",
         parse_mode=ParseMode.HTML,
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="❌ Отмена")]],
-            resize_keyboard=True
-        )
+        reply_markup=keyboards.admin_cancel_photo_keyboard()
     )
 
 @dp.message(AdminState.ADMIN_CHOOSING_PRODUCT_NAME, F.text == "↩️ Назад к подкатегориям")
@@ -831,6 +832,7 @@ async def process_admin_photo(message: Message, state: FSMContext):
         photo = message.photo[-1]
         file_id = photo.file_id
 
+        # Используем метод save_photo из photo_database
         success = await photo_db.save_photo(
             product_key=product_key,
             file_id=file_id,
@@ -846,6 +848,7 @@ async def process_admin_photo(message: Message, state: FSMContext):
                     photo_count = await photo_db.count_photos()
                 except Exception:
                     pass
+            
             await message.answer(
                 f"✅ <b>Фото успешно загружено!</b>\n\n"
                 f"<b>Продукт:</b> {display_name}\n"
@@ -895,30 +898,30 @@ async def on_startup():
 
     # Инициализация базы данных
     try:
-        await safe_db_init()
-        logger.info(f"📊 База данных инициализирована")
-        
-        # Проверяем подключение
-        if is_db_connected():
-            try:
-                photo_count = await photo_db.count_photos()
-                logger.info(f"📸 Фото в базе: {photo_count}")
-            except Exception as e:
-                logger.warning(f"⚠️ Не удалось получить количество фото: {e}")
-        else:
-            logger.warning("⚠️ База данных не подключена")
+        success = await safe_db_init()
+        if success:
+            logger.info("✅ База данных инициализирована успешно")
             
+            # Проверяем подключение
+            if is_db_connected():
+                try:
+                    photo_count = await photo_db.count_photos()
+                    logger.info(f"📸 Фото в базе: {photo_count}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось получить количество фото: {e}")
+        else:
+            logger.warning("⚠️ База данных не инициализирована, работаем в режиме без фото")
     except Exception as e:
         logger.error(f"❌ Ошибка при инициализации БД: {e}")
 
-    # ЗАПУСК HEALTH CHECK СЕРВЕРА
+    # Запуск health check сервера
     try:
         health_runner = await start_health_server()
         logger.info("🌐 Health check сервер запущен")
     except Exception as e:
         logger.error(f"❌ Ошибка запуска health check сервера: {e}")
 
-    # ЗАПУСК SELF-PING СИСТЕМЫ
+    # Запуск self-ping системы
     asyncio.create_task(self_ping_task())
     logger.info("🔔 Self-ping система активирована")
 
@@ -945,11 +948,12 @@ async def main():
 
         logger.info("🚀 Запуск бота с работающим health check...")
 
-        # Запуск поллинга
+        # Запуск поллинга с дополнительными параметрами
         await dp.start_polling(
             bot, 
             skip_updates=True,
-            allowed_updates=dp.resolve_used_update_types()
+            allowed_updates=dp.resolve_used_update_types(),
+            close_bot_session=False  # Предотвращает конфликты инстансов
         )
 
     except Exception as e:
