@@ -17,6 +17,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.client.session.aiohttp import AiohttpSession
 
 import config
 from states import UserState, AdminState
@@ -35,7 +36,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Инициализация бота
+# Инициализация бота с новой сессией
 bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
@@ -45,14 +46,7 @@ dp = Dispatcher(storage=storage)
 def is_db_connected() -> bool:
     """Безопасная проверка подключения к БД"""
     try:
-        # Проверяем, есть ли у объекта свойство is_connected
-        if hasattr(photo_db, 'is_connected'):
-            return photo_db.is_connected
-        # Или проверяем наличие пула
-        elif hasattr(photo_db, 'pool'):
-            return photo_db.pool is not None and not photo_db.pool._closed
-        else:
-            return False
+        return photo_db.is_connected
     except Exception as e:
         logger.error(f"❌ Ошибка проверки подключения БД: {e}")
         return False
@@ -948,12 +942,37 @@ async def main():
 
         logger.info("🚀 Запуск бота с работающим health check...")
 
-        # Запуск поллинга с дополнительными параметрами
+        # СИЛЬНАЯ ОЧИСТКА СТАРОГО ПОДКЛЮЧЕНИЯ
+        try:
+            # 1. Удаляем webhook
+            await bot.delete_webhook(drop_pending_updates=True)
+            
+            # 2. Закрываем старую сессию
+            if hasattr(bot, 'session') and bot.session and not bot.session.closed:
+                await bot.session.close()
+                logger.info("✅ Закрыта старая сессия бота")
+                
+            # 3. Ждем 3 секунды для гарантии
+            logger.info("⏳ Ждем завершения старой сессии...")
+            await asyncio.sleep(3)
+            
+            # 4. Создаем НОВУЮ сессию
+            session = AiohttpSession()
+            bot.session = session
+            logger.info("✅ Создана новая сессия бота")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Ошибка при очистке сессии: {e}")
+            # Продолжаем в любом случае
+
+        # Запуск поллинга с увеличенными таймаутами
         await dp.start_polling(
             bot, 
             skip_updates=True,
             allowed_updates=dp.resolve_used_update_types(),
-            close_bot_session=False  # Предотвращает конфликты инстансов
+            close_bot_session=False,  # Предотвращает конфликты инстансов
+            polling_timeout=30,       # Увеличиваем таймаут
+            handle_signals=False      # Отключаем обработку сигналов
         )
 
     except Exception as e:
