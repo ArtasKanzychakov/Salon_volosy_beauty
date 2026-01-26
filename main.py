@@ -249,10 +249,10 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
 
         # Добавляем фото по цвету волос
         if hair_color in ["Шатенка", "Русая"]:
-            chocolate_keys = config.PHOTO_MAPPING["волосы"].get("оттеночная_шоколад", [])
+            chocolate_keys = config.PHOTO_MAPPING["волосы"].get("оттенечная_шоколад", [])
             photo_keys.extend(chocolate_keys)
         elif hair_color == "Рыжая":
-            copper_keys = config.PHOTO_MAPPING["волосы"].get("оттеночная_медный", [])
+            copper_keys = config.PHOTO_MAPPING["волосы"].get("оттенечная_медный", [])
             photo_keys.extend(copper_keys)
 
         # Убираем дубликаты
@@ -432,6 +432,40 @@ async def cmd_admin(message: Message, state: FSMContext):
         reply_markup=keyboards.back_to_menu_keyboard()
     )
 
+# ==================== ОБРАБОТКА КНОПКИ "НАЧАТЬ ЗАНОВО" (ПРАВКА #1) ====================
+
+@dp.message(F.text == "🔄 Начать заново")
+async def process_start_over(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Начать заново' - аналог /start (ПРАВКА #1)"""
+    try:
+        await state.clear()
+        delete_user_data(message.from_user.id)
+        clear_selected_problems(message.from_user.id)
+
+        welcome_text = (
+            "🔄 <b>Начинаем заново!</b>\n\n"
+            "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n"
+            "Я помогу подобрать идеальную косметику для:\n"
+            "💇‍♀️ <b>Волос</b> — подбор по типу, проблемам и цвету\n"
+            "🧴 <b>Тело</b> — уход по потребностям кожи\n\n"
+            "<i>Выберите категорию:</i>"
+        )
+
+        await message.answer(
+            welcome_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboards.main_menu_keyboard()
+        )
+        await state.set_state(UserState.CHOOSING_CATEGORY)
+        logger.info(f"🔄 Пользователь {message.from_user.id} начал заново")
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка в process_start_over: {e}")
+        await message.answer(
+            "❌ Произошла ошибка. Пожалуйста, попробуйте позже.",
+            reply_markup=keyboards.main_menu_keyboard()
+        )
+
 # ==================== ГЛАВНОЕ МЕНЮ И ВЫБОР КАТЕГОРИИ ====================
 
 @dp.message(F.text == "🏠 Главное меню")
@@ -599,12 +633,14 @@ async def process_scalp_type(message: Message, state: FSMContext):
 
 @dp.message(UserState.HAIR_CHOOSING_VOLUME, F.text.in_(config.HAIR_VOLUME))
 async def process_hair_volume(message: Message, state: FSMContext):
+    """Обработка выбора объема волос (ПРАВКА #3)"""
     hair_volume = message.text
     save_user_data(message.from_user.id, "hair_volume", hair_volume)
 
     hair_type = get_user_data_value(message.from_user.id, "hair_type", "")
 
-    if hair_type in ["Окрашенные блондинки", "Окрашенные все остальные"]:
+    # ПРАВКА #3: ТОЛЬКО для окрашенных (не блондинок) показываем выбор цвета
+    if hair_type == "Окрашенные":  # Только для окрашенных, НЕ для блондинок
         await state.set_state(UserState.HAIR_CHOOSING_COLOR)
         await message.answer(
             "<i>Выберите цвет волос:</i>",
@@ -612,6 +648,7 @@ async def process_hair_volume(message: Message, state: FSMContext):
             reply_markup=keyboards.hair_color_keyboard(hair_type)
         )
     else:
+        # Для блондинок и натуральных сразу показываем результат
         await show_hair_results(message, state)
 
 @dp.message(UserState.HAIR_CHOOSING_COLOR, F.text.in_(["Блондинка", "Брюнетка", "Шатенка", "Русая", "Рыжая"]))
