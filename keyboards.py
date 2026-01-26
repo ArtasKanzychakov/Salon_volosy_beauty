@@ -11,13 +11,16 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="💇‍♀️ Волосы"))
     builder.add(KeyboardButton(text="🧴 Тело"))
-    builder.adjust(2)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2, 1)  # Изменено для правильного расположения
     return builder.as_markup(resize_keyboard=True)
 
 def back_to_menu_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура для возврата в меню"""
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="🏠 Главное меню"))
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
 def selection_complete_keyboard() -> ReplyKeyboardMarkup:
@@ -25,7 +28,8 @@ def selection_complete_keyboard() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="🔄 Новая подборка"))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def body_goals_keyboard() -> ReplyKeyboardMarkup:
@@ -34,7 +38,8 @@ def body_goals_keyboard() -> ReplyKeyboardMarkup:
     for goal in config.BODY_GOALS:
         builder.add(KeyboardButton(text=goal))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(1)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(1, 1, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def hair_type_keyboard() -> ReplyKeyboardMarkup:
@@ -43,7 +48,8 @@ def hair_type_keyboard() -> ReplyKeyboardMarkup:
     for hair_type in config.HAIR_TYPES:
         builder.add(KeyboardButton(text=hair_type))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(1)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(1, 1, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def hair_problems_keyboard(selected_problems: list = None) -> ReplyKeyboardMarkup:
@@ -59,7 +65,8 @@ def hair_problems_keyboard(selected_problems: list = None) -> ReplyKeyboardMarku
 
     builder.add(KeyboardButton(text="✅ Готово"))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2, 2, 1, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def scalp_type_keyboard() -> ReplyKeyboardMarkup:
@@ -68,7 +75,8 @@ def scalp_type_keyboard() -> ReplyKeyboardMarkup:
     for scalp_type in config.SCALP_TYPES:
         builder.add(KeyboardButton(text=scalp_type))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def hair_volume_keyboard() -> ReplyKeyboardMarkup:
@@ -77,7 +85,8 @@ def hair_volume_keyboard() -> ReplyKeyboardMarkup:
     for volume in config.HAIR_VOLUME:
         builder.add(KeyboardButton(text=volume))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def hair_color_keyboard(hair_type: str) -> ReplyKeyboardMarkup:
@@ -89,7 +98,8 @@ def hair_color_keyboard(hair_type: str) -> ReplyKeyboardMarkup:
         builder.add(KeyboardButton(text=color))
 
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
 
 # ==================== АДМИН-КЛАВИАТУРЫ ====================
@@ -101,7 +111,8 @@ def admin_category_keyboard() -> ReplyKeyboardMarkup:
     builder.add(KeyboardButton(text="🧴 Тело"))
     builder.add(KeyboardButton(text="📊 Статистика"))
     builder.add(KeyboardButton(text="🏠 Главное меню"))
-    builder.adjust(2)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def admin_subcategory_keyboard(category: str) -> ReplyKeyboardMarkup:
@@ -117,7 +128,8 @@ def admin_subcategory_keyboard(category: str) -> ReplyKeyboardMarkup:
         builder.add(KeyboardButton(text=subcategory))
 
     builder.add(KeyboardButton(text="↩️ Назад к категориям"))
-    builder.adjust(1)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(1, 1, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def admin_products_keyboard(category: str, subcategory: str) -> ReplyKeyboardMarkup:
@@ -130,11 +142,14 @@ def admin_products_keyboard(category: str, subcategory: str) -> ReplyKeyboardMar
         builder.add(KeyboardButton(text=display_name))
 
     builder.add(KeyboardButton(text="↩️ Назад к подкатегориям"))
-    builder.adjust(1)
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(1, 1, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def admin_cancel_photo_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура для отмены загрузки фото"""
     builder = ReplyKeyboardBuilder()
     builder.add(KeyboardButton(text="❌ Отмена"))
+    builder.add(KeyboardButton(text="🔄 Начать заново"))  # ПРАВКА #1: Добавлено
+    builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
