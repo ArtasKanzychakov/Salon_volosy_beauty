@@ -1,15 +1,16 @@
 """
-MAIN.PY - ФИНАЛЬНАЯ ВЕРСИЯ для Render со статическим хранилищем фото
+MAIN.PY - Бот с массовой загрузкой фото через админ-панель
 """
 
 import os
 import logging
 import asyncio
 from datetime import datetime
+from typing import List, Dict
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, ReplyKeyboardRemove
-from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
@@ -39,7 +40,11 @@ dp = Dispatcher(storage=storage)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
-async def send_recommended_photos(chat_id: int, photo_keys: list, caption: str = ""):
+def is_admin(user_id: int) -> bool:
+    """Проверка, является ли пользователь администратором"""
+    return user_id in config.ADMIN_IDS
+
+async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: str = ""):
     """Отправка рекомендованных фото из статического хранилища"""
     try:
         if not photo_keys:
@@ -57,8 +62,8 @@ async def send_recommended_photos(chat_id: int, photo_keys: list, caption: str =
             if file_id:
                 # Находим отображаемое имя
                 display_name = photo_key
-                for category in config.PHOTO_STRUCTURE.values():
-                    for subcat_products in category.values():
+                for category_data in config.PHOTO_STRUCTURE_ADMIN.values():
+                    for subcat_products in category_data.values():
                         for key, name in subcat_products:
                             if key == photo_key:
                                 display_name = name
@@ -71,7 +76,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: list, caption: str =
                     parse_mode=ParseMode.HTML
                 )
                 sent_count += 1
-                await asyncio.sleep(0.5)  # Небольшая задержка между фото
+                await asyncio.sleep(0.3)  # Небольшая задержка между фото
 
         if sent_count == 0:
             await bot.send_message(
@@ -152,6 +157,64 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
         logger.error(f"❌ Ошибка получения рекомендаций для волос: {e}")
         return "Рекомендации временно недоступны.", []
 
+def format_photo_stats() -> str:
+    """Форматирование статистики фото"""
+    stats = photo_map.get_photo_stats()
+    
+    text = (
+        f"📊 <b>Статистика загруженных фото</b>\n\n"
+        f"✅ <b>Загружено:</b> {stats['loaded']} из {stats['total']}\n"
+        f"📈 <b>Прогресс:</b> {stats['percentage']}%\n"
+        f"❌ <b>Осталось:</b> {stats['missing']} фото\n\n"
+    )
+    
+    if stats['percentage'] < 30:
+        text += "⚠️ <i>Загружено очень мало фото. Рекомендуется загрузить основные продукты.</i>"
+    elif stats['percentage'] < 70:
+        text += "🔄 <i>Продолжайте загрузку для полного покрытия.</i>"
+    else:
+        text += "✅ <i>Большинство фото загружено. Отличная работа!</i>"
+    
+    return text
+
+def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -> str:
+    """Форматирование списка фото для отображения"""
+    per_page = config.ADMIN_PHOTOS_PER_PAGE
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    
+    filtered_photos = photos
+    if filter_type == "missing":
+        filtered_photos = [p for p in photos if p["status"] == "❌ Отсутствует"]
+    elif filter_type == "loaded":
+        filtered_photos = [p for p in photos if p["status"] == "✅ Загружено"]
+    
+    current_photos = filtered_photos[start_idx:end_idx]
+    
+    # Заголовок
+    if filter_type == "all":
+        title = "📋 <b>Все фото</b>"
+    elif filter_type == "loaded":
+        title = "✅ <b>Загруженные фото</b>"
+    else:
+        title = "❌ <b>Отсутствующие фото</b>"
+    
+    text = f"{title}\n"
+    text += f"Страница {page + 1} из {(len(filtered_photos) + per_page - 1) // per_page}\n\n"
+    
+    for i, photo in enumerate(current_photos, start=start_idx + 1):
+        file_id_preview = photo["file_id"][:20] + "..." if photo["file_id"] else "нет"
+        text += f"{i}. {photo['status']} <b>{photo['name']}</b>\n"
+        text += f"   Ключ: <code>{photo['key']}</code>\n"
+        if photo["file_id"]:
+            text += f"   file_id: <code>{file_id_preview}</code>\n"
+        text += "\n"
+    
+    stats = photo_map.get_photo_stats()
+    text += f"\n📈 <b>Итого:</b> {stats['loaded']}/{stats['total']} ({stats['percentage']}%)"
+    
+    return text
+
 # ==================== КОМАНДЫ БОТА ====================
 
 @dp.message(Command("start"))
@@ -195,40 +258,38 @@ async def cmd_help(message: Message):
         "3. Получаете рекомендации и фото продуктов\n\n"
         "<b>Навигация:</b>\n"
         "↩️ <b>Назад</b> — вернуться на предыдущий шаг\n"
-        "🏠 <b>В главное меню</b> — вернуться в начало"
+        "🏠 <b>В главное меню</b> — вернуться в начало\n\n"
+        "<b>Команды:</b>\n"
+        "/start - Перезапустить бота\n"
+        "/help - Показать эту справку\n"
+        "/status - Статус системы\n"
+        "/contacts - Контакты салона"
     )
 
     await message.answer(
         help_text,
-        reply_markup=keyboards.main_menu_keyboard()
+        reply_markup=keyboards.help_keyboard()
     )
 
 @dp.message(Command("status"))
 async def cmd_status(message: Message):
     try:
-        all_photos = photo_map.get_all_photos()
-        photo_count = len(all_photos)
+        stats = photo_map.get_photo_stats()
         
-        hair_count = 0
-        body_count = 0
-        
-        for key, file_id in all_photos.items():
-            if file_id:  # Проверяем, что фото загружено
-                if key in config.PHOTO_STRUCTURE.get("волосы", {}):
-                    hair_count += 1
-                elif key in config.PHOTO_STRUCTURE.get("тело", {}):
-                    body_count += 1
-
         status_text = (
             "📊 <b>Статус системы</b>\n\n"
             f"🤖 <b>Бот:</b> Активен ✅\n\n"
-            f"📈 <b>Статистика фото:</b>\n"
-            f"• Всего загружено: {photo_count}\n"
-            f"• Волосы: {hair_count}\n"
-            f"• Тело: {body_count}\n\n"
-            f"🕐 <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}"
+            f"📸 <b>Фотографии:</b>\n"
+            f"• Всего продуктов: {stats['total']}\n"
+            f"• Загружено фото: {stats['loaded']}\n"
+            f"• Отсутствует: {stats['missing']}\n"
+            f"• Прогресс: {stats['percentage']}%\n\n"
+            f"🕐 <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}\n\n"
         )
-
+        
+        if stats['percentage'] < 50:
+            status_text += "⚠️ <i>Рекомендуется загрузить фото продуктов через админ-панель</i>"
+        
         await message.answer(
             status_text,
             reply_markup=keyboards.main_menu_keyboard()
@@ -238,9 +299,24 @@ async def cmd_status(message: Message):
         logger.error(f"❌ Ошибка в cmd_status: {e}")
         await message.answer("❌ Ошибка при получении статуса")
 
+@dp.message(Command("contacts"))
+async def cmd_contacts(message: Message):
+    contacts_text = (
+        "📞 <b>Контакты SVOY AV.COSMETIC</b>\n\n"
+        f"{config.SALES_POINTS}\n\n"
+        f"{config.DELIVERY_INFO}\n\n"
+        "<b>💬 Связь с менеджером:</b>\n"
+        "@SVOY_AVCOSMETIC"
+    )
+    
+    await message.answer(
+        contacts_text,
+        reply_markup=keyboards.contacts_keyboard()
+    )
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
-    if message.from_user.id not in config.ADMIN_IDS:
+    if not is_admin(message.from_user.id):
         await message.answer("❌ У вас нет доступа к админ-панели.")
         return
         
@@ -255,6 +331,34 @@ async def cmd_admin(message: Message, state: FSMContext):
 @dp.message(F.text == "❓ Помощь")
 async def process_help(message: Message):
     await cmd_help(message)
+
+@dp.message(F.text == "📞 Контакты")
+async def process_contacts(message: Message):
+    await cmd_contacts(message)
+
+@dp.message(F.text == "📍 Точки продаж")
+async def process_sales_points(message: Message):
+    await message.answer(
+        config.SALES_POINTS,
+        reply_markup=keyboards.contacts_keyboard()
+    )
+
+@dp.message(F.text == "🚚 Доставка")
+async def process_delivery(message: Message):
+    await message.answer(
+        config.DELIVERY_INFO,
+        reply_markup=keyboards.contacts_keyboard()
+    )
+
+@dp.message(F.text == "💬 Написать менеджеру")
+async def process_manager(message: Message):
+    await message.answer(
+        "💬 <b>Связь с менеджером</b>\n\n"
+        "Для консультации и заказов напишите нашему менеджеру:\n"
+        "@SVOY_AVCOSMETIC\n\n"
+        "<i>Мы ответим в ближайшее время!</i>",
+        reply_markup=keyboards.contacts_keyboard()
+    )
 
 @dp.message(F.text == "🏠 В главное меню")
 async def process_main_menu(message: Message, state: FSMContext):
@@ -341,7 +445,7 @@ async def process_new_body_selection(message: Message, state: FSMContext):
         reply_markup=keyboards.body_goals_keyboard()
     )
 
-# ==================== ГЛАВНОЕ МЕНЮ И ВЫБОР КАТЕГОРИИ ====================
+# ==================== ОСНОВНАЯ ЛОГИКА БОТА ====================
 
 @dp.message(UserState.CHOOSING_CATEGORY, F.text == "💇‍♀️ Волосы")
 async def process_hair_category(message: Message, state: FSMContext):
@@ -530,7 +634,7 @@ async def show_hair_results(message: Message, state: FSMContext):
         )
         await state.clear()
 
-# ==================== АДМИН-ПАНЕЛЬ (ТОЛЬКО ДЛЯ ПОЛУЧЕНИЯ FILE_ID) ====================
+# ==================== АДМИН-ПАНЕЛЬ ====================
 
 @dp.message(AdminState.WAITING_PASSWORD)
 async def process_admin_password(message: Message, state: FSMContext):
@@ -544,196 +648,95 @@ async def process_admin_password(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Неверный пароль. Попробуйте еще раз.")
 
-@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📊 Проверить фото")
-async def process_admin_check_photos(message: Message):
-    try:
-        all_photos = photo_map.get_all_photos()
-        photo_count = len(all_photos)
-        
-        hair_count = 0
-        body_count = 0
-        
-        for key, file_id in all_photos.items():
-            if file_id:
-                if key in config.PHOTO_STRUCTURE.get("волосы", {}):
-                    hair_count += 1
-                elif key in config.PHOTO_STRUCTURE.get("тело", {}):
-                    body_count += 1
-
-        stats_text = "📊 <b>Статистика фото</b>\n\n"
-        stats_text += f"• Всего загружено: {photo_count}\n"
-        stats_text += f"• Волосы: {hair_count}\n"
-        stats_text += f"• Тело: {body_count}\n\n"
-        
-        if photo_count < 5:
-            stats_text += "⚠️ <b>Внимание:</b> Загружено мало фото. Рекомендуется загрузить основные продукты."
-        
-        await message.answer(
-            stats_text,
-            reply_markup=keyboards.admin_main_keyboard()
-        )
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при проверке фото: {e}")
-        await message.answer("❌ Ошибка при проверке фото.")
-
-@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📸 Получить file_id")
-async def process_admin_get_file_id(message: Message, state: FSMContext):
-    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
-    await message.answer(
-        "📸 <b>Получение file_id фото</b>\n\nВыберите категорию:",
-        reply_markup=keyboards.admin_category_keyboard()
-    )
-
-@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text.in_(["💇‍♀️ Волосы", "🧴 Тело"]))
-async def process_admin_category(message: Message, state: FSMContext):
-    category = "волосы" if message.text == "💇‍♀️ Волосы" else "тело"
-    await state.update_data(admin_category=category)
+# Главное меню админки
+@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📸 Управление фото")
+async def process_admin_photos_menu(message: Message, state: FSMContext):
+    await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
+    
+    stats = photo_map.get_photo_stats()
+    stats_text = format_photo_stats()
     
     await message.answer(
-        f"Выберите подкатегорию для <b>{category}</b>:",
-        reply_markup=keyboards.admin_subcategory_keyboard(category)
+        f"📸 <b>Управление фотографиями</b>\n\n{stats_text}\n\n"
+        "Выберите действие:",
+        reply_markup=keyboards.admin_photos_keyboard()
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text != "↩️ Назад")
-async def process_admin_subcategory(message: Message, state: FSMContext):
-    data = await state.get_data()
-    category = data.get("admin_category")
-    subcategory = message.text
-
-    if subcategory not in config.PHOTO_STRUCTURE.get(category, {}):
-        await message.answer("❌ Неверная подкатегория. Пожалуйста, выберите из списка.")
-        return
-
-    await state.update_data(admin_subcategory=subcategory)
-    await state.set_state(AdminState.ADMIN_CHOOSING_PRODUCT_NAME)
-
+@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📊 Статистика")
+async def process_admin_stats(message: Message):
+    stats = photo_map.get_photo_stats()
+    stats_text = format_photo_stats()
+    
+    missing_photos = [p for p in photo_map.get_missing_photos() if p["status"] == "❌ Отсутствует"]
+    
+    if missing_photos:
+        stats_text += "\n\n<b>Самые важные отсутствующие фото:</b>\n"
+        for i, photo in enumerate(missing_photos[:5], 1):
+            stats_text += f"{i}. {photo['name']}\n"
+    
     await message.answer(
-        f"Выберите продукт в подкатегории <b>{subcategory}</b>:",
-        reply_markup=keyboards.admin_products_keyboard(category, subcategory)
-    )
-
-@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text == "↩️ Назад")
-async def process_admin_back_to_categories(message: Message, state: FSMContext):
-    await state.set_state(AdminState.ADMIN_MAIN_MENU)
-    await message.answer(
-        "Главное меню админки:",
+        stats_text,
         reply_markup=keyboards.admin_main_keyboard()
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_PRODUCT_NAME, F.text != "↩️ Назад")
-async def process_admin_product(message: Message, state: FSMContext):
-    data = await state.get_data()
-    category = data.get("admin_category")
-    subcategory = data.get("admin_subcategory")
-    product_display_name = message.text
-
-    product_key = None
-    for key, name in config.PHOTO_STRUCTURE[category][subcategory]:
-        if name == product_display_name:
-            product_key = key
-            break
-
-    if not product_key:
-        await message.answer("❌ Продукт не найден. Пожалуйста, выберите из списка.")
-        return
-
-    await state.update_data(admin_product_key=product_key)
-    await state.set_state(AdminState.ADMIN_WAITING_PHOTO)
-    
-    current_file_id = photo_map.get_photo_file_id(product_key)
-    status = "✅ Уже есть" if current_file_id else "❌ Нет фото"
+@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "🔄 Обновить список")
+async def process_admin_refresh(message: Message):
+    # Просто показываем обновленную статистику
+    stats = photo_map.get_photo_stats()
+    stats_text = format_photo_stats()
     
     await message.answer(
-        f"📸 <b>Отправьте фото для продукта:</b>\n\n"
-        f"<b>Продукт:</b> {product_display_name}\n"
-        f"<b>Ключ:</b> <code>{product_key}</code>\n"
-        f"<b>Статус:</b> {status}\n\n"
-        f"<i>После отправки фото вы получите его file_id.</i>\n"
-        f"<i>Скопируйте file_id и вставьте в файл photo_map.py</i>",
-        reply_markup=ReplyKeyboardRemove()
+        f"🔄 <b>Список обновлен</b>\n\n{stats_text}",
+        reply_markup=keyboards.admin_main_keyboard()
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_PRODUCT_NAME, F.text == "↩️ Назад")
-async def process_admin_back_to_subcategories(message: Message, state: FSMContext):
-    data = await state.get_data()
-    category = data.get("admin_category")
-    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+# Меню управления фото
+@dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "📋 Список всех фото")
+async def process_admin_photos_list(message: Message):
+    missing_photos = photo_map.get_missing_photos()
+    page = 0
+    filter_type = "all"
+    
     await message.answer(
-        f"Выберите подкатегорию для <b>{category}</b>:",
-        reply_markup=keyboards.admin_subcategory_keyboard(category)
+        format_photo_list(missing_photos, page, filter_type),
+        reply_markup=keyboards.admin_photos_list_keyboard(page, filter_type),
+        parse_mode=ParseMode.HTML
     )
 
-@dp.message(AdminState.ADMIN_WAITING_PHOTO, F.photo)
-async def process_admin_photo(message: Message, state: FSMContext):
-    try:
-        data = await state.get_data()
-        product_key = data.get("admin_product_key")
-        
-        if not product_key:
-            await message.answer("❌ Ошибка: продукт не выбран.")
-            await state.set_state(AdminState.ADMIN_MAIN_MENU)
-            await message.answer(
-                "Возврат в админ-меню.",
-                reply_markup=keyboards.admin_main_keyboard()
-            )
-            return
+@dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "📥 Массовая загрузка")
+async def process_admin_bulk_upload(message: Message, state: FSMContext):
+    await state.set_state(AdminState.ADMIN_BULK_UPLOAD)
+    
+    stats = photo_map.get_photo_stats()
+    
+    await message.answer(
+        f"📥 <b>Массовая загрузка фото</b>\n\n"
+        f"✅ <b>Загружено:</b> {stats['loaded']} из {stats['total']}\n"
+        f"📈 <b>Прогресс:</b> {stats['percentage']}%\n\n"
+        f"<b>Как это работает:</b>\n"
+        f"1. Выберите категорию (Волосы/Тело)\n"
+        f"2. Выберите подкатегорию\n"
+        f"3. Отправляйте фото по одному\n"
+        f"4. file_id автоматически сохранятся\n\n"
+        f"Выберите категорию для загрузки:",
+        reply_markup=keyboards.admin_bulk_upload_keyboard()
+    )
 
-        photo = message.photo[-1]
-        file_id = photo.file_id
+@dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "❌ Удалить все фото")
+async def process_admin_reset_photos(message: Message, state: FSMContext):
+    await state.set_state(AdminState.ADMIN_CONFIRM_RESET)
+    
+    stats = photo_map.get_photo_stats()
+    
+    await message.answer(
+        f"⚠️ <b>ВНИМАНИЕ!</b>\n\n"
+        f"Вы собираетесь удалить ВСЕ загруженные фото.\n\n"
+        f"📊 <b>Текущая статистика:</b>\n"
+        f"• Загружено фото: {stats['loaded']}\n"
+        f"• Всего продуктов: {stats['total']}\n\n"
+        f"<b>Это действие нельзя отменить!</b>\n\n"
+        f"Вы уверены, что хотите удалить все фото?",
+        reply_markup=keyboards.admin_confirm_reset_keyboard()
+    )
 
-        # Находим отображаемое имя для продукта
-        display_name = product_key
-        for category in config.PHOTO_STRUCTURE.values():
-            for subcat_products in category.values():
-                for key, name in subcat_products:
-                    if key == product_key:
-                        display_name = name
-                        break
-
-        await message.answer(
-            f"✅ <b>Фото получено!</b>\n\n"
-            f"<b>Продукт:</b> {display_name}\n"
-            f"<b>Ключ:</b> <code>{product_key}</code>\n\n"
-            f"<b>file_id:</b>\n<code>{file_id}</code>\n\n"
-            f"<i>Скопируйте file_id и вставьте в файл photo_map.py:</i>\n\n"
-            f"<code>\"{product_key}\": \"{file_id}\",</code>\n\n"
-            f"После этого перезапустите бота.",
-            reply_markup=keyboards.admin_main_keyboard()
-        )
-
-        await state.set_state(AdminState.ADMIN_MAIN_MENU)
-        logger.info(f"📸 Админ получил file_id для {product_key}: {file_id[:20]}...")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при обработке фото админа: {e}", exc_info=True)
-        await message.answer(
-            f"❌ <b>Ошибка:</b>\n\n<code>{str(e)[:200]}</code>",
-            reply_markup=keyboards.admin_main_keyboard()
-        )
-        await state.set_state(AdminState.ADMIN_MAIN_MENU)
-
-# ==================== ЗАПУСК БОТА ====================
-
-async def main():
-    """Основная функция запуска бота"""
-    try:
-        logger.info("🚀 Запуск бота со статическим хранилищем фото...")
-        
-        # Удаляем webhook для чистого запуска
-        await bot.delete_webhook(drop_pending_updates=True)
-        
-        # Запускаем поллинг
-        await dp.start_polling(bot)
-        
-    except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
-        raise
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("👋 Бот остановлен пользователем")
-    except Exception as e:
-        logger.error(f"⚠️ Необработанное исключение: {e}", exc_info=True)
+@dp.message(AdminState.ADMIN_PHOT
