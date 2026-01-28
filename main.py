@@ -40,10 +40,6 @@ dp = Dispatcher(storage=storage)
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
-def is_admin(user_id: int) -> bool:
-    """Проверка, является ли пользователь администратором"""
-    return user_id in config.ADMIN_IDS
-
 async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: str = ""):
     """Отправка рекомендованных фото из статического хранилища"""
     try:
@@ -160,21 +156,21 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
 def format_photo_stats() -> str:
     """Форматирование статистики фото"""
     stats = photo_map.get_photo_stats()
-    
+
     text = (
         f"📊 <b>Статистика загруженных фото</b>\n\n"
         f"✅ <b>Загружено:</b> {stats['loaded']} из {stats['total']}\n"
         f"📈 <b>Прогресс:</b> {stats['percentage']}%\n"
         f"❌ <b>Осталось:</b> {stats['missing']} фото\n\n"
     )
-    
+
     if stats['percentage'] < 30:
         text += "⚠️ <i>Загружено очень мало фото. Рекомендуется загрузить основные продукты.</i>"
     elif stats['percentage'] < 70:
         text += "🔄 <i>Продолжайте загрузку для полного покрытия.</i>"
     else:
         text += "✅ <i>Большинство фото загружено. Отличная работа!</i>"
-    
+
     return text
 
 def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -> str:
@@ -182,15 +178,15 @@ def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -
     per_page = config.ADMIN_PHOTOS_PER_PAGE
     start_idx = page * per_page
     end_idx = start_idx + per_page
-    
+
     filtered_photos = photos
     if filter_type == "missing":
         filtered_photos = [p for p in photos if p["status"] == "❌ Отсутствует"]
     elif filter_type == "loaded":
         filtered_photos = [p for p in photos if p["status"] == "✅ Загружено"]
-    
+
     current_photos = filtered_photos[start_idx:end_idx]
-    
+
     # Заголовок
     if filter_type == "all":
         title = "📋 <b>Все фото</b>"
@@ -198,10 +194,10 @@ def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -
         title = "✅ <b>Загруженные фото</b>"
     else:
         title = "❌ <b>Отсутствующие фото</b>"
-    
+
     text = f"{title}\n"
     text += f"Страница {page + 1} из {(len(filtered_photos) + per_page - 1) // per_page}\n\n"
-    
+
     for i, photo in enumerate(current_photos, start=start_idx + 1):
         file_id_preview = photo["file_id"][:20] + "..." if photo["file_id"] else "нет"
         text += f"{i}. {photo['status']} <b>{photo['name']}</b>\n"
@@ -209,10 +205,10 @@ def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -
         if photo["file_id"]:
             text += f"   file_id: <code>{file_id_preview}</code>\n"
         text += "\n"
-    
+
     stats = photo_map.get_photo_stats()
     text += f"\n📈 <b>Итого:</b> {stats['loaded']}/{stats['total']} ({stats['percentage']}%)"
-    
+
     return text
 
 # ==================== КОМАНДЫ БОТА ====================
@@ -275,7 +271,7 @@ async def cmd_help(message: Message):
 async def cmd_status(message: Message):
     try:
         stats = photo_map.get_photo_stats()
-        
+
         status_text = (
             "📊 <b>Статус системы</b>\n\n"
             f"🤖 <b>Бот:</b> Активен ✅\n\n"
@@ -286,10 +282,10 @@ async def cmd_status(message: Message):
             f"• Прогресс: {stats['percentage']}%\n\n"
             f"🕐 <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}\n\n"
         )
-        
+
         if stats['percentage'] < 50:
             status_text += "⚠️ <i>Рекомендуется загрузить фото продуктов через админ-панель</i>"
-        
+
         await message.answer(
             status_text,
             reply_markup=keyboards.main_menu_keyboard()
@@ -308,7 +304,7 @@ async def cmd_contacts(message: Message):
         "<b>💬 Связь с менеджером:</b>\n"
         "@SVOY_AVCOSMETIC"
     )
-    
+
     await message.answer(
         contacts_text,
         reply_markup=keyboards.contacts_keyboard()
@@ -316,10 +312,7 @@ async def cmd_contacts(message: Message):
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        await message.answer("❌ У вас нет доступа к админ-панели.")
-        return
-        
+    # Любой пользователь может попытаться войти в админку, проверка будет по паролю
     await state.set_state(AdminState.WAITING_PASSWORD)
     await message.answer(
         "🔐 <b>Доступ к админ-панели</b>\n\nВведите пароль для входа:",
@@ -376,7 +369,7 @@ async def process_main_menu(message: Message, state: FSMContext):
 async def process_back(message: Message, state: FSMContext):
     """Обработчик кнопки 'Назад' - логический возврат на предыдущий шаг"""
     current_state = await state.get_state()
-    
+
     # Определяем, на какой шаг вернуться
     if current_state == UserState.HAIR_CHOOSING_COLOR:
         await state.set_state(UserState.HAIR_CHOOSING_VOLUME)
@@ -429,7 +422,7 @@ async def process_new_hair_selection(message: Message, state: FSMContext):
     await state.clear()
     clear_selected_problems(message.from_user.id)
     await state.set_state(UserState.HAIR_CHOOSING_TYPE)
-    
+
     await message.answer(
         "💇‍♀️ <b>Отлично! Подберем уход для волос.</b>\n\n<i>Какой у вас тип волос?</i>",
         reply_markup=keyboards.hair_type_keyboard()
@@ -439,7 +432,7 @@ async def process_new_hair_selection(message: Message, state: FSMContext):
 async def process_new_body_selection(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(UserState.BODY_CHOOSING_GOAL)
-    
+
     await message.answer(
         "🧴 <b>Прекрасно! Займемся уходом за телом.</b>\n\n<i>Какова ваша основная цель ухода?</i>",
         reply_markup=keyboards.body_goals_keyboard()
@@ -652,10 +645,10 @@ async def process_admin_password(message: Message, state: FSMContext):
 @dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📸 Управление фото")
 async def process_admin_photos_menu(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
-    
+
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
-    
+
     await message.answer(
         f"📸 <b>Управление фотографиями</b>\n\n{stats_text}\n\n"
         "Выберите действие:",
@@ -666,14 +659,14 @@ async def process_admin_photos_menu(message: Message, state: FSMContext):
 async def process_admin_stats(message: Message):
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
-    
+
     missing_photos = [p for p in photo_map.get_missing_photos() if p["status"] == "❌ Отсутствует"]
-    
+
     if missing_photos:
         stats_text += "\n\n<b>Самые важные отсутствующие фото:</b>\n"
         for i, photo in enumerate(missing_photos[:5], 1):
             stats_text += f"{i}. {photo['name']}\n"
-    
+
     await message.answer(
         stats_text,
         reply_markup=keyboards.admin_main_keyboard()
@@ -684,7 +677,7 @@ async def process_admin_refresh(message: Message):
     # Просто показываем обновленную статистику
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
-    
+
     await message.answer(
         f"🔄 <b>Список обновлен</b>\n\n{stats_text}",
         reply_markup=keyboards.admin_main_keyboard()
@@ -696,7 +689,7 @@ async def process_admin_photos_list(message: Message):
     missing_photos = photo_map.get_missing_photos()
     page = 0
     filter_type = "all"
-    
+
     await message.answer(
         format_photo_list(missing_photos, page, filter_type),
         reply_markup=keyboards.admin_photos_list_keyboard(page, filter_type),
@@ -706,9 +699,9 @@ async def process_admin_photos_list(message: Message):
 @dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "📥 Массовая загрузка")
 async def process_admin_bulk_upload(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_BULK_UPLOAD)
-    
+
     stats = photo_map.get_photo_stats()
-    
+
     await message.answer(
         f"📥 <b>Массовая загрузка фото</b>\n\n"
         f"✅ <b>Загружено:</b> {stats['loaded']} из {stats['total']}\n"
@@ -725,9 +718,9 @@ async def process_admin_bulk_upload(message: Message, state: FSMContext):
 @dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "❌ Удалить все фото")
 async def process_admin_reset_photos(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_CONFIRM_RESET)
-    
+
     stats = photo_map.get_photo_stats()
-    
+
     await message.answer(
         f"⚠️ <b>ВНИМАНИЕ!</b>\n\n"
         f"Вы собираетесь удалить ВСЕ загруженные фото.\n\n"
@@ -768,7 +761,7 @@ async def process_bulk_body(message: Message):
 async def process_bulk_progress(message: Message):
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
-    
+
     await message.answer(
         f"📋 <b>Прогресс загрузки</b>\n\n{stats_text}",
         reply_markup=keyboards.admin_bulk_upload_keyboard()
@@ -777,10 +770,10 @@ async def process_bulk_progress(message: Message):
 @dp.message(AdminState.ADMIN_BULK_UPLOAD, F.text == "↩️ Назад к фото")
 async def process_bulk_back_to_photos(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
-    
+
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
-    
+
     await message.answer(
         f"📸 <b>Управление фотографиями</b>\n\n{stats_text}\n\n"
         "Выберите действие:",
@@ -792,15 +785,15 @@ async def process_bulk_back_to_photos(message: Message, state: FSMContext):
 @dp.callback_query(F.data.startswith("bulk_category:"))
 async def process_bulk_category(callback: CallbackQuery, state: FSMContext):
     category = callback.data.split(":")[1]  # "волосы" или "тело"
-    
+
     category_name = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
-    
+
     await callback.message.edit_text(
         f"{category_name} - <b>Выберите подкатегорию:</b>",
         reply_markup=keyboards.admin_subcategory_bulk_keyboard(category),
         parse_mode=ParseMode.HTML
     )
-    
+
     await callback.answer()
 
 @dp.callback_query(F.data == "bulk_back_to_categories")
@@ -811,7 +804,7 @@ async def process_bulk_back_to_categories(callback: CallbackQuery):
         reply_markup=keyboards.admin_category_bulk_keyboard(),
         parse_mode=ParseMode.HTML
     )
-    
+
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("bulk_subcategory:"))
@@ -819,14 +812,14 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
     parts = callback.data.split(":")
     category = parts[1]  # "волосы" или "тело"
     subcategory = parts[2]
-    
+
     category_name = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
     subcategory_name = subcategory
-    
+
     # Получаем список продуктов для этой подкатегории
     category_key = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
     products = config.PHOTO_STRUCTURE_ADMIN[category_key][subcategory_name]
-    
+
     # Сохраняем текущую подкатегорию в состоянии
     await state.update_data(
         bulk_category=category,
@@ -834,13 +827,13 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
         bulk_products=products,
         bulk_current_index=0
     )
-    
+
     await state.set_state(AdminState.ADMIN_WAITING_BULK_PHOTO)
-    
+
     # Показываем первый продукт для загрузки
     product_key, product_name = products[0]
     current_file_id = photo_map.get_photo_file_id(product_key)
-    
+
     text = (
         f"📥 <b>Массовая загрузка</b>\n\n"
         f"<b>Категория:</b> {category_name}\n"
@@ -849,7 +842,7 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
         f"• {product_name}\n"
         f"• Ключ: <code>{product_key}</code>\n\n"
     )
-    
+
     if current_file_id:
         text += f"✅ <i>Уже загружено</i>\n"
         text += f"• file_id: <code>{current_file_id[:30]}...</code>\n\n"
@@ -857,7 +850,7 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
     else:
         text += f"❌ <i>Еще не загружено</i>\n\n"
         text += f"<i>Отправьте фото этого продукта</i>"
-    
+
     # Создаем inline-клавиатуру
     builder = types.InlineKeyboardBuilder()
     builder.row(
@@ -870,13 +863,13 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
             callback_data="bulk_stop"
         )
     )
-    
+
     await callback.message.edit_text(
         text,
         reply_markup=builder.as_markup(),
         parse_mode=ParseMode.HTML
     )
-    
+
     await callback.answer()
 
 @dp.callback_query(F.data.startswith("bulk_skip:"))
@@ -884,15 +877,15 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     products = data.get("bulk_products", [])
     current_index = data.get("bulk_current_index", 0)
-    
+
     # Переходим к следующему продукту
     current_index += 1
-    
+
     if current_index >= len(products):
         # Все продукты обработаны
         category_name = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
         subcategory_name = data.get("bulk_subcategory", "")
-        
+
         await callback.message.edit_text(
             f"✅ <b>Загрузка завершена!</b>\n\n"
             f"<b>Категория:</b> {category_name}\n"
@@ -902,17 +895,17 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
             reply_markup=keyboards.admin_category_bulk_keyboard(),
             parse_mode=ParseMode.HTML
         )
-        
+
         await state.set_state(AdminState.ADMIN_BULK_UPLOAD)
         await callback.answer("✅ Все продукты обработаны!")
         return
-    
+
     # Показываем следующий продукт
     await state.update_data(bulk_current_index=current_index)
-    
+
     product_key, product_name = products[current_index]
     current_file_id = photo_map.get_photo_file_id(product_key)
-    
+
     text = (
         f"📥 <b>Массовая загрузка</b>\n\n"
         f"<b>Категория:</b> {'💇‍♀️ Волосы' if data.get('bulk_category') == 'волосы' else '🧴 Тело'}\n"
@@ -921,7 +914,7 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
         f"• {product_name}\n"
         f"• Ключ: <code>{product_key}</code>\n\n"
     )
-    
+
     if current_file_id:
         text += f"✅ <i>Уже загружено</i>\n"
         text += f"• file_id: <code>{current_file_id[:30]}...</code>\n\n"
@@ -929,7 +922,7 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
     else:
         text += f"❌ <i>Еще не загружено</i>\n\n"
         text += f"<i>Отправьте фото этого продукта</i>"
-    
+
     builder = types.InlineKeyboardBuilder()
     builder.row(
         types.InlineKeyboardButton(
@@ -941,20 +934,20 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
             callback_data="bulk_stop"
         )
     )
-    
+
     await callback.message.edit_text(
         text,
         reply_markup=builder.as_markup(),
         parse_mode=ParseMode.HTML
     )
-    
+
     await callback.answer("⏭️ Пропущено")
 
 @dp.callback_query(F.data == "bulk_stop")
 async def process_bulk_stop(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     current_index = data.get("bulk_current_index", 0)
-    
+
     await callback.message.edit_text(
         f"🛑 <b>Загрузка остановлена</b>\n\n"
         f"<b>Обработано продуктов:</b> {current_index + 1}\n\n"
@@ -962,7 +955,7 @@ async def process_bulk_stop(callback: CallbackQuery, state: FSMContext):
         reply_markup=keyboards.admin_category_bulk_keyboard(),
         parse_mode=ParseMode.HTML
     )
-    
+
     await state.set_state(AdminState.ADMIN_BULK_UPLOAD)
     await callback.answer("🛑 Загрузка остановлена")
 
@@ -972,27 +965,27 @@ async def process_bulk_photo(message: Message, state: FSMContext):
     data = await state.get_data()
     products = data.get("bulk_products", [])
     current_index = data.get("bulk_current_index", 0)
-    
+
     if current_index >= len(products):
         await message.answer("❌ Ошибка: список продуктов пуст.")
         return
-    
+
     product_key, product_name = products[current_index]
     photo = message.photo[-1]
     file_id = photo.file_id
-    
+
     # Сохраняем фото
     success = photo_map.set_photo_file_id(product_key, file_id)
-    
+
     if success:
         # Переходим к следующему продукту
         current_index += 1
-        
+
         if current_index >= len(products):
             # Все продукты обработаны
             category_name = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
             subcategory_name = data.get("bulk_subcategory", "")
-            
+
             await message.answer(
                 f"✅ <b>Фото сохранено!</b>\n\n"
                 f"<b>Продукт:</b> {product_name}\n"
@@ -1005,16 +998,16 @@ async def process_bulk_photo(message: Message, state: FSMContext):
                 f"Вы можете продолжить загрузку в другой подкатегории.",
                 reply_markup=keyboards.admin_category_bulk_keyboard()
             )
-            
+
             await state.set_state(AdminState.ADMIN_BULK_UPLOAD)
             return
-        
+
         # Показываем следующий продукт
         await state.update_data(bulk_current_index=current_index)
-        
+
         next_product_key, next_product_name = products[current_index]
         next_file_id = photo_map.get_photo_file_id(next_product_key)
-        
+
         text = (
             f"✅ <b>Фото сохранено!</b>\n\n"
             f"<b>Продукт:</b> {product_name}\n"
@@ -1024,7 +1017,7 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             f"• {next_product_name}\n"
             f"• Ключ: <code>{next_product_key}</code>\n\n"
         )
-        
+
         if next_file_id:
             text += f"✅ <i>Уже загружено</i>\n"
             text += f"• file_id: <code>{next_file_id[:30]}...</code>\n\n"
@@ -1032,7 +1025,7 @@ async def process_bulk_photo(message: Message, state: FSMContext):
         else:
             text += f"❌ <i>Еще не загружено</i>\n\n"
             text += f"<i>Отправьте фото этого продукта</i>"
-        
+
         builder = types.InlineKeyboardBuilder()
         builder.row(
             types.InlineKeyboardButton(
@@ -1044,7 +1037,7 @@ async def process_bulk_photo(message: Message, state: FSMContext):
                 callback_data="bulk_stop"
             )
         )
-        
+
         await message.answer(
             text,
             reply_markup=builder.as_markup(),
@@ -1064,15 +1057,15 @@ async def process_photos_list(callback: CallbackQuery):
     parts = callback.data.split(":")
     filter_type = parts[1]
     page = int(parts[2])
-    
+
     missing_photos = photo_map.get_missing_photos()
-    
+
     await callback.message.edit_text(
         format_photo_list(missing_photos, page, filter_type),
         reply_markup=keyboards.admin_photos_list_keyboard(page, filter_type),
         parse_mode=ParseMode.HTML
     )
-    
+
     await callback.answer()
 
 @dp.callback_query(F.data == "bulk_upload_start")
@@ -1083,24 +1076,24 @@ async def process_bulk_upload_start(callback: CallbackQuery):
         reply_markup=keyboards.admin_category_bulk_keyboard(),
         parse_mode=ParseMode.HTML
     )
-    
+
     await callback.answer()
 
 @dp.callback_query(F.data == "admin_back_to_main")
 async def process_admin_back_to_main_callback(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminState.ADMIN_MAIN_MENU)
-    
+
     await callback.message.edit_text(
         "Главное меню админки:",
         reply_markup=keyboards.admin_main_keyboard()
     )
-    
+
     await callback.answer()
 
 @dp.callback_query(F.data == "confirm_reset_photos")
 async def process_confirm_reset(callback: CallbackQuery, state: FSMContext):
     success = photo_map.reset_all_photos()
-    
+
     if success:
         await callback.message.edit_text(
             "✅ <b>Все фото успешно удалены!</b>\n\n"
@@ -1115,24 +1108,24 @@ async def process_confirm_reset(callback: CallbackQuery, state: FSMContext):
             reply_markup=keyboards.admin_photos_keyboard(),
             parse_mode=ParseMode.HTML
         )
-    
+
     await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
     await callback.answer()
 
 @dp.callback_query(F.data == "cancel_reset_photos")
 async def process_cancel_reset(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
-    
+
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
-    
+
     await callback.message.edit_text(
         f"📸 <b>Управление фотографиями</b>\n\n{stats_text}\n\n"
         "Удаление отменено. Выберите действие:",
         reply_markup=keyboards.admin_photos_keyboard(),
         parse_mode=ParseMode.HTML
     )
-    
+
     await callback.answer("❌ Удаление отменено")
 
 @dp.callback_query(F.data == "no_action")
@@ -1145,13 +1138,13 @@ async def main():
     """Основная функция запуска бота"""
     try:
         logger.info("🚀 Запуск бота с массовой загрузкой фото...")
-        
+
         # Удаляем webhook для чистого запуска
         await bot.delete_webhook(drop_pending_updates=True)
-        
+
         # Запускаем поллинг
         await dp.start_polling(bot)
-        
+
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
         raise
