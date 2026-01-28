@@ -1,10 +1,11 @@
 """
-USER_STORAGE.PY - Хранилище данных пользователей
+USER_STORAGE.PY - Хранилище данных пользователей (в памяти)
+На Render Free данные теряются при рестарте, но это нормально для текущей сессии
 """
 
 from typing import Dict, Any
 
-# Простое хранилище в памяти
+# Хранилище в памяти (теряется при рестарте сервера)
 user_data = {}
 
 def save_user_data(user_id: int, key: str, value: Any):
@@ -54,23 +55,5 @@ def clear_selected_problems(user_id: int):
         user_data[user_id]["selected_problems"] = []
 
 def get_user_data_value(user_id: int, key: str, default: Any = None) -> Any:
-    """Алиас для get_user_data с ключом"""
+    """Получить значение с дефолтом"""
     return get_user_data(user_id, key) or default
-
-class UserDataStorage:
-    """Класс для совместимости"""
-    def __init__(self):
-        pass
-
-    def get_data(self, user_id: int):
-        return get_user_data(user_id)
-
-    def update_data(self, user_id: int, data: dict):
-        for key, value in data.items():
-            save_user_data(user_id, key, value)
-
-    def clear_data(self, user_id: int):
-        delete_user_data(user_id)
-
-# Создаем глобальный объект
-user_data_storage = UserDataStorage()
