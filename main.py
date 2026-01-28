@@ -1,28 +1,24 @@
 """
-MAIN.PY - ФИНАЛЬНАЯ ВЕРСИЯ для Render с работающим health check
+MAIN.PY - ФИНАЛЬНАЯ ВЕРСИЯ для Render со статическим хранилищем фото
 """
 
 import os
 import logging
 import asyncio
-import aiohttp
 from datetime import datetime
-from typing import List
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardRemove
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
-from aiogram.client.session.aiohttp import AiohttpSession
 
 import config
 from states import UserState, AdminState
 import keyboards
-from photo_database import photo_db
+import photo_map
 from user_storage import (
     save_user_data, get_user_data_value, add_selected_problem,
     remove_selected_problem, get_selected_problems,
@@ -36,139 +32,31 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Инициализация бота с новой сессией
+# Инициализация бота
 bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ БД ====================
-
-def is_db_connected() -> bool:
-    """Безопасная проверка подключения к БД"""
-    try:
-        return photo_db.is_connected
-    except Exception as e:
-        logger.error(f"❌ Ошибка проверки подключения БД: {e}")
-        return False
-
-async def safe_db_init() -> bool:
-    """Безопасная инициализация БД"""
-    try:
-        await photo_db.init()
-        logger.info("✅ База данных инициализирована")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Ошибка инициализации БД: {e}")
-        return False
-
-# ==================== HEALTH CHECK СЕРВЕР ====================
-
-async def start_health_server():
-    """Запуск health check сервера"""
-    from aiohttp import web
-
-    async def health_handler(request):
-        return web.Response(text='OK')
-
-    async def index_handler(request):
-        return web.Response(text='Bot is running!')
-
-    async def robots_handler(request):
-        return web.Response(text='User-agent: *\nDisallow:')
-
-    app = web.Application()
-    app.router.add_get('/health', health_handler)
-    app.router.add_get('/', index_handler)
-    app.router.add_get('/robots.txt', robots_handler)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    port = int(os.getenv('PORT', 10000))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-
-    logger.info(f"🌐 Health check сервер запущен на порту {port}")
-    return runner
-
-# ==================== SELF-PING СИСТЕМА ====================
-
-async def self_ping():
-    """Функция для self-ping приложения"""
-    try:
-        external_url = os.getenv("RENDER_EXTERNAL_URL")
-
-        if not external_url:
-            logger.warning("⚠️ RENDER_EXTERNAL_URL не установлен")
-            # Пробуем определить из логики Render
-            service_name = os.getenv("RENDER_SERVICE_NAME", "salon-volosy-beauty")
-            external_url = f"https://{service_name}.onrender.com"
-
-        ping_url = f"{external_url}/health"
-        logger.debug(f"🔗 Пингую: {ping_url}")
-
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(ping_url) as response:
-                if response.status == 200:
-                    logger.info(f"✅ Self-ping успешен: {datetime.now().strftime('%H:%M:%S')}")
-                    return True
-                else:
-                    logger.warning(f"⚠️ Self-ping вернул статус {response.status}")
-                    return False
-    except Exception as e:
-        logger.error(f"❌ Ошибка self-ping: {str(e)[:100]}")
-        return False
-
-async def self_ping_task():
-    """Постоянная задача для self-ping"""
-    logger.info("🔔 Self-ping задача запущена")
-
-    # Ждем 15 секунд после старта
-    await asyncio.sleep(15)
-
-    # Первый пинг
-    await self_ping()
-
-    # Затем каждые 4 минуты
-    while True:
-        try:
-            await asyncio.sleep(240)  # 4 минуты
-            await self_ping()
-        except asyncio.CancelledError:
-            logger.info("🔔 Self-ping задача остановлена")
-            break
-        except Exception as e:
-            logger.error(f"❌ Ошибка в self_ping_task: {e}")
-            await asyncio.sleep(60)
-
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
-async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: str = ""):
-    """Отправка рекомендованных фото"""
+async def send_recommended_photos(chat_id: int, photo_keys: list, caption: str = ""):
+    """Отправка рекомендованных фото из статического хранилища"""
     try:
         if not photo_keys:
             await bot.send_message(
                 chat_id, 
-                "📷 Фото продуктов для этих рекомендаций пока не загружены.\n\nАдминистратор скоро добавит фотографии!",
-                reply_markup=keyboards.selection_complete_keyboard()
-            )
-            return
-
-        if not is_db_connected():
-            await bot.send_message(
-                chat_id, 
-                "🔄 База данных обновляется. Попробуйте позже.",
+                "📷 Фото продуктов для этих рекомендаций пока не загружены.\n\n"
+                "Администратор скоро добавит фотографии!",
                 reply_markup=keyboards.selection_complete_keyboard()
             )
             return
 
         sent_count = 0
         for photo_key in photo_keys:
-            file_id = await photo_db.get_photo_id(photo_key)
+            file_id = photo_map.get_photo_file_id(photo_key)
             if file_id:
+                # Находим отображаемое имя
                 display_name = photo_key
-                # Ищем отображаемое имя в структуре фото
                 for category in config.PHOTO_STRUCTURE.values():
                     for subcat_products in category.values():
                         for key, name in subcat_products:
@@ -188,7 +76,8 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
         if sent_count == 0:
             await bot.send_message(
                 chat_id,
-                "📷 Фото продуктов временно недоступны.\n\nАдминистратор еще не загрузил фотографии для этих продуктов.",
+                "📷 Фото продуктов временно недоступны.\n\n"
+                "Администратор еще не загрузил фотографии для этих продуктов.",
                 reply_markup=keyboards.selection_complete_keyboard()
             )
 
@@ -263,42 +152,6 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
         logger.error(f"❌ Ошибка получения рекомендаций для волос: {e}")
         return "Рекомендации временно недоступны.", []
 
-# ==================== МИДЛВЕЙР ДЛЯ ПРОВЕРКИ БД ====================
-
-@dp.update.middleware()
-async def database_middleware(handler, event, data):
-    """Middleware для проверки и восстановления подключения к БД"""
-    try:
-        # Проверяем подключение к БД
-        if not is_db_connected():
-            logger.warning("⚠️ Database connection lost, attempting to reconnect...")
-            
-            # Пробуем переподключиться
-            try:
-                if await safe_db_init():
-                    logger.info("✅ Database reconnected successfully")
-            except Exception as e:
-                logger.error(f"❌ Reconnection failed: {e}")
-                    
-        # Проверяем, что БД доступна для запросов
-        if is_db_connected():
-            # Тестовый запрос для проверки работоспособности
-            try:
-                await asyncio.wait_for(photo_db.count_photos(), timeout=5.0)
-            except (asyncio.TimeoutError, Exception) as e:
-                logger.warning(f"⚠️ Database query test failed: {e}")
-                # Закрываем пул, чтобы при следующем запросе попытались переподключиться
-                if hasattr(photo_db, 'pool') and photo_db.pool:
-                    try:
-                        await photo_db.close()
-                    except:
-                        pass
-    except Exception as e:
-        logger.error(f"❌ Error in database middleware: {e}")
-    
-    # Продолжаем обработку
-    return await handler(event, data)
-
 # ==================== КОМАНДЫ БОТА ====================
 
 @dp.message(Command("start"))
@@ -317,7 +170,6 @@ async def cmd_start(message: Message, state: FSMContext):
 
         await message.answer(
             welcome_text,
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.main_menu_keyboard()
         )
         await state.set_state(UserState.CHOOSING_CATEGORY)
@@ -341,46 +193,44 @@ async def cmd_help(message: Message):
         "1. Выбираете категорию (волосы/тело)\n"
         "2. Отвечаете на вопросы о типе/проблемах\n"
         "3. Получаете рекомендации и фото продуктов\n\n"
-        "<b>Админ-панель:</b>\n"
-        "Для загрузки фото используйте команду /admin"
+        "<b>Навигация:</b>\n"
+        "↩️ <b>Назад</b> — вернуться на предыдущий шаг\n"
+        "🏠 <b>В главное меню</b> — вернуться в начало"
     )
 
     await message.answer(
         help_text,
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.main_menu_keyboard()
     )
 
 @dp.message(Command("status"))
 async def cmd_status(message: Message):
     try:
-        db_status = is_db_connected()
-        photo_count = 0
-        hair_photos = []
-        body_photos = []
-
-        if db_status:
-            try:
-                photo_count = await photo_db.count_photos()
-                hair_photos = await photo_db.get_photos_by_category("волосы")
-                body_photos = await photo_db.get_photos_by_category("тело")
-            except Exception as e:
-                logger.error(f"❌ Ошибка получения статистики БД: {e}")
+        all_photos = photo_map.get_all_photos()
+        photo_count = len(all_photos)
+        
+        hair_count = 0
+        body_count = 0
+        
+        for key, file_id in all_photos.items():
+            if file_id:  # Проверяем, что фото загружено
+                if key in config.PHOTO_STRUCTURE.get("волосы", {}):
+                    hair_count += 1
+                elif key in config.PHOTO_STRUCTURE.get("тело", {}):
+                    body_count += 1
 
         status_text = (
             "📊 <b>Статус системы</b>\n\n"
-            f"🤖 <b>Бот:</b> Активен ✅\n"
-            f"🗄️ <b>База данных:</b> {'Подключена ✅' if db_status else 'Ошибка ❌'}\n\n"
+            f"🤖 <b>Бот:</b> Активен ✅\n\n"
             f"📈 <b>Статистика фото:</b>\n"
-            f"• Всего: {photo_count}\n"
-            f"• Волосы: {len(hair_photos)}\n"
-            f"• Тело: {len(body_photos)}\n\n"
+            f"• Всего загружено: {photo_count}\n"
+            f"• Волосы: {hair_count}\n"
+            f"• Тело: {body_count}\n\n"
             f"🕐 <b>Время:</b> {datetime.now().strftime('%H:%M:%S')}"
         )
 
         await message.answer(
             status_text,
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.main_menu_keyboard()
         )
 
@@ -388,87 +238,25 @@ async def cmd_status(message: Message):
         logger.error(f"❌ Ошибка в cmd_status: {e}")
         await message.answer("❌ Ошибка при получении статуса")
 
-@dp.message(Command("dbcheck"))
-async def cmd_dbcheck(message: Message):
-    try:
-        db_connected = is_db_connected()
-        photo_count = 0
-        all_photos = []
-
-        if db_connected:
-            try:
-                photo_count = await photo_db.count_photos()
-                all_photos = await photo_db.get_all_photos()
-            except Exception as e:
-                logger.error(f"❌ Ошибка проверки БД: {e}")
-
-        check_text = (
-            "🔍 <b>Проверка базы данных</b>\n\n"
-            f"• Подключена: {'✅' if db_connected else '❌'}\n"
-            f"• Всего фото: {photo_count}\n\n"
-            "<b>Последние записи:</b>\n"
-        )
-
-        if all_photos:
-            for i, photo in enumerate(all_photos[:5], 1):
-                check_text += f"{i}. {photo.get('product_key', 'N/A')} - {photo.get('display_name', 'N/A')}\n"
-            if len(all_photos) > 5:
-                check_text += f"... и еще {len(all_photos) - 5} записей\n"
-        else:
-            check_text += "• Таблица пуста\n"
-
-        await message.answer(check_text, parse_mode=ParseMode.HTML)
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка проверки БД: {e}")
-        await message.answer(f"❌ Ошибка: {str(e)[:100]}")
-
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
+    if message.from_user.id not in config.ADMIN_IDS:
+        await message.answer("❌ У вас нет доступа к админ-панели.")
+        return
+        
     await state.set_state(AdminState.WAITING_PASSWORD)
     await message.answer(
         "🔐 <b>Доступ к админ-панели</b>\n\nВведите пароль для входа:",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.back_to_menu_keyboard()
     )
 
-# ==================== ОБРАБОТКА КНОПКИ "НАЧАТЬ ЗАНОВО" (ПРАВКА #1) ====================
+# ==================== НАВИГАЦИОННЫЕ КНОПКИ ====================
 
-@dp.message(F.text == "🔄 Начать заново")
-async def process_start_over(message: Message, state: FSMContext):
-    """Обработчик кнопки 'Начать заново' - аналог /start (ПРАВКА #1)"""
-    try:
-        await state.clear()
-        delete_user_data(message.from_user.id)
-        clear_selected_problems(message.from_user.id)
+@dp.message(F.text == "❓ Помощь")
+async def process_help(message: Message):
+    await cmd_help(message)
 
-        welcome_text = (
-            "🔄 <b>Начинаем заново!</b>\n\n"
-            "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n"
-            "Я помогу подобрать идеальную косметику для:\n"
-            "💇‍♀️ <b>Волос</b> — подбор по типу, проблемам и цвету\n"
-            "🧴 <b>Тело</b> — уход по потребностям кожи\n\n"
-            "<i>Выберите категорию:</i>"
-        )
-
-        await message.answer(
-            welcome_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboards.main_menu_keyboard()
-        )
-        await state.set_state(UserState.CHOOSING_CATEGORY)
-        logger.info(f"🔄 Пользователь {message.from_user.id} начал заново")
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка в process_start_over: {e}")
-        await message.answer(
-            "❌ Произошла ошибка. Пожалуйста, попробуйте позже.",
-            reply_markup=keyboards.main_menu_keyboard()
-        )
-
-# ==================== ГЛАВНОЕ МЕНЮ И ВЫБОР КАТЕГОРИИ ====================
-
-@dp.message(F.text == "🏠 Главное меню")
+@dp.message(F.text == "🏠 В главное меню")
 async def process_main_menu(message: Message, state: FSMContext):
     await state.clear()
     clear_selected_problems(message.from_user.id)
@@ -476,22 +264,84 @@ async def process_main_menu(message: Message, state: FSMContext):
     welcome_text = "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>"
     await message.answer(
         welcome_text,
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
 
-@dp.message(F.text == "🔄 Новая подборка")
-async def process_new_selection(message: Message, state: FSMContext):
+@dp.message(F.text == "↩️ Назад")
+async def process_back(message: Message, state: FSMContext):
+    """Обработчик кнопки 'Назад' - логический возврат на предыдущий шаг"""
+    current_state = await state.get_state()
+    
+    # Определяем, на какой шаг вернуться
+    if current_state == UserState.HAIR_CHOOSING_COLOR:
+        await state.set_state(UserState.HAIR_CHOOSING_VOLUME)
+        await message.answer(
+            "<i>Хотите добавить объем волосам?</i>",
+            reply_markup=keyboards.hair_volume_keyboard()
+        )
+    elif current_state == UserState.HAIR_CHOOSING_VOLUME:
+        await state.set_state(UserState.HAIR_CHOOSING_SCALP)
+        await message.answer(
+            "<i>Чувствительная кожа головы?</i>",
+            reply_markup=keyboards.scalp_type_keyboard()
+        )
+    elif current_state == UserState.HAIR_CHOOSING_SCALP:
+        await state.set_state(UserState.HAIR_CHOOSING_PROBLEMS)
+        selected_problems = get_selected_problems(message.from_user.id)
+        await message.answer(
+            "<i>Выберите проблемы волос (можно несколько):</i>\n"
+            "<b>Нажмите на проблему, чтобы выбрать/отменить</b>\n\n"
+            "<i>Можно нажать '✅ Готово' без выбора проблем</i>",
+            reply_markup=keyboards.hair_problems_keyboard(selected_problems)
+        )
+    elif current_state == UserState.HAIR_CHOOSING_PROBLEMS:
+        await state.set_state(UserState.HAIR_CHOOSING_TYPE)
+        await message.answer(
+            "💇‍♀️ <b>Отлично! Подберем уход для волос.</b>\n\n<i>Какой у вас тип волос?</i>",
+            reply_markup=keyboards.hair_type_keyboard()
+        )
+    elif current_state == UserState.HAIR_CHOOSING_TYPE:
+        await state.set_state(UserState.CHOOSING_CATEGORY)
+        await message.answer(
+            "👋 <b>Подберем идеальную косметику!</b>\n\n<i>Выберите категорию:</i>",
+            reply_markup=keyboards.main_menu_keyboard()
+        )
+    elif current_state == UserState.BODY_CHOOSING_GOAL:
+        await state.set_state(UserState.CHOOSING_CATEGORY)
+        await message.answer(
+            "👋 <b>Подберем идеальную косметику!</b>\n\n<i>Выберите категорию:</i>",
+            reply_markup=keyboards.main_menu_keyboard()
+        )
+    else:
+        await state.set_state(UserState.CHOOSING_CATEGORY)
+        await message.answer(
+            "👋 <b>Подберем идеальную косметику!</b>\n\n<i>Выберите категорию:</i>",
+            reply_markup=keyboards.main_menu_keyboard()
+        )
+
+@dp.message(F.text == "💇‍♀️ Новая подборка волос")
+async def process_new_hair_selection(message: Message, state: FSMContext):
     await state.clear()
     clear_selected_problems(message.from_user.id)
-
+    await state.set_state(UserState.HAIR_CHOOSING_TYPE)
+    
     await message.answer(
-        "🔄 <b>Начинаем новую подборку!</b>\n\n<i>Выберите категорию:</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=keyboards.main_menu_keyboard()
+        "💇‍♀️ <b>Отлично! Подберем уход для волос.</b>\n\n<i>Какой у вас тип волос?</i>",
+        reply_markup=keyboards.hair_type_keyboard()
     )
-    await state.set_state(UserState.CHOOSING_CATEGORY)
+
+@dp.message(F.text == "🧴 Новая подборка тела")
+async def process_new_body_selection(message: Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(UserState.BODY_CHOOSING_GOAL)
+    
+    await message.answer(
+        "🧴 <b>Прекрасно! Займемся уходом за телом.</b>\n\n<i>Какова ваша основная цель ухода?</i>",
+        reply_markup=keyboards.body_goals_keyboard()
+    )
+
+# ==================== ГЛАВНОЕ МЕНЮ И ВЫБОР КАТЕГОРИИ ====================
 
 @dp.message(UserState.CHOOSING_CATEGORY, F.text == "💇‍♀️ Волосы")
 async def process_hair_category(message: Message, state: FSMContext):
@@ -499,7 +349,6 @@ async def process_hair_category(message: Message, state: FSMContext):
     await state.set_state(UserState.HAIR_CHOOSING_TYPE)
     await message.answer(
         "💇‍♀️ <b>Отлично! Подберем уход для волос.</b>\n\n<i>Какой у вас тип волос?</i>",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.hair_type_keyboard()
     )
 
@@ -508,7 +357,6 @@ async def process_body_category(message: Message, state: FSMContext):
     await state.set_state(UserState.BODY_CHOOSING_GOAL)
     await message.answer(
         "🧴 <b>Прекрасно! Займемся уходом за телом.</b>\n\n<i>Какова ваша основная цель ухода?</i>",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.body_goals_keyboard()
     )
 
@@ -524,7 +372,6 @@ async def process_body_goal(message: Message, state: FSMContext):
 
         await message.answer(
             recommendations,
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.selection_complete_keyboard()
         )
 
@@ -542,7 +389,6 @@ async def process_body_goal(message: Message, state: FSMContext):
 
         await message.answer(
             config.SALES_POINTS + "\n\n" + config.DELIVERY_INFO,
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.selection_complete_keyboard()
         )
 
@@ -570,23 +416,18 @@ async def process_hair_type(message: Message, state: FSMContext):
         "<i>Теперь выберите проблемы волос (можно несколько):</i>\n"
         "<b>Нажмите на проблему, чтобы выбрать/отменить</b>\n\n"
         "<i>Можно нажать '✅ Готово' без выбора проблем</i>",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.hair_problems_keyboard([])
     )
 
 @dp.message(UserState.HAIR_CHOOSING_PROBLEMS)
 async def process_hair_problems(message: Message, state: FSMContext):
-    logger.info(f"Обработка проблем: '{message.text}'")
-
     if message.text == "✅ Готово":
         selected_problems = get_selected_problems(message.from_user.id)
         logger.info(f"Выбрано проблем: {selected_problems}")
 
-        # Проблемы НЕ обязательны - убрали проверку на пустой список
         await state.set_state(UserState.HAIR_CHOOSING_SCALP)
         await message.answer(
             "<i>Чувствительная кожа головы?</i>",
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.scalp_type_keyboard()
         )
 
@@ -594,30 +435,21 @@ async def process_hair_problems(message: Message, state: FSMContext):
         problem = message.text.replace("✅ ", "").replace("☐ ", "")
 
         if problem not in config.HAIR_PROBLEMS:
-            logger.warning(f"⚠️ Неизвестная проблема: {problem}")
             return
 
         current_problems = get_selected_problems(message.from_user.id)
 
         if problem in current_problems:
             remove_selected_problem(message.from_user.id, problem)
-            logger.info(f"Убрана проблема: {problem}")
         else:
             add_selected_problem(message.from_user.id, problem)
-            logger.info(f"Добавлена проблема: {problem}")
 
         await message.answer(
             "<i>Выберите проблемы волос (можно несколько):</i>\n"
             "<b>Нажмите на проблему, чтобы выбрать/отменить</b>\n\n"
             "<i>Можно нажать '✅ Готово' без выбора проблем</i>",
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.hair_problems_keyboard(get_selected_problems(message.from_user.id))
         )
-
-    elif message.text == "🏠 Главное меню":
-        clear_selected_problems(message.from_user.id)
-        await state.clear()
-        await process_main_menu(message, state)
 
 @dp.message(UserState.HAIR_CHOOSING_SCALP, F.text.in_(config.SCALP_TYPES))
 async def process_scalp_type(message: Message, state: FSMContext):
@@ -627,28 +459,23 @@ async def process_scalp_type(message: Message, state: FSMContext):
     await state.set_state(UserState.HAIR_CHOOSING_VOLUME)
     await message.answer(
         "<i>Хотите добавить объем волосам?</i>",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.hair_volume_keyboard()
     )
 
 @dp.message(UserState.HAIR_CHOOSING_VOLUME, F.text.in_(config.HAIR_VOLUME))
 async def process_hair_volume(message: Message, state: FSMContext):
-    """Обработка выбора объема волос (ПРАВКА #3)"""
     hair_volume = message.text
     save_user_data(message.from_user.id, "hair_volume", hair_volume)
 
     hair_type = get_user_data_value(message.from_user.id, "hair_type", "")
 
-    # ПРАВКА #3: ТОЛЬКО для окрашенных (не блондинок) показываем выбор цвета
-    if hair_type == "Окрашенные":  # Только для окрашенных, НЕ для блондинок
+    if hair_type == "Окрашенные":
         await state.set_state(UserState.HAIR_CHOOSING_COLOR)
         await message.answer(
             "<i>Выберите цвет волос:</i>",
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.hair_color_keyboard(hair_type)
         )
     else:
-        # Для блондинок и натуральных сразу показываем результат
         await show_hair_results(message, state)
 
 @dp.message(UserState.HAIR_CHOOSING_COLOR, F.text.in_(["Блондинка", "Брюнетка", "Шатенка", "Русая", "Рыжая"]))
@@ -665,15 +492,12 @@ async def show_hair_results(message: Message, state: FSMContext):
         hair_volume = get_user_data_value(message.from_user.id, "hair_volume", "")
         hair_color = get_user_data_value(message.from_user.id, "hair_color", "")
 
-        logger.info(f"📊 Данные для рекомендаций: {hair_type}, {problems}, {scalp_type}, {hair_volume}, {hair_color}")
-
         recommendations, photo_keys = await get_hair_recommendations_with_photos(
             hair_type, problems, scalp_type, hair_volume, hair_color
         )
 
         await message.answer(
             recommendations,
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.selection_complete_keyboard()
         )
 
@@ -691,7 +515,6 @@ async def show_hair_results(message: Message, state: FSMContext):
 
         await message.answer(
             config.SALES_POINTS + "\n\n" + config.DELIVERY_INFO,
-            parse_mode=ParseMode.HTML,
             reply_markup=keyboards.selection_complete_keyboard()
         )
 
@@ -707,7 +530,7 @@ async def show_hair_results(message: Message, state: FSMContext):
         )
         await state.clear()
 
-# ==================== АДМИН-ПАНЕЛЬ ====================
+# ==================== АДМИН-ПАНЕЛЬ (ТОЛЬКО ДЛЯ ПОЛУЧЕНИЯ FILE_ID) ====================
 
 @dp.message(AdminState.WAITING_PASSWORD)
 async def process_admin_password(message: Message, state: FSMContext):
@@ -715,63 +538,64 @@ async def process_admin_password(message: Message, state: FSMContext):
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
         await message.answer(
             "✅ <b>Доступ разрешен!</b>\n\nДобро пожаловать в админ-панель.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboards.admin_category_keyboard()
+            reply_markup=keyboards.admin_main_keyboard()
         )
         logger.info(f"🔐 Пользователь {message.from_user.id} вошел в админ-панель")
-    elif message.text == "🏠 Главное меню":
-        await state.clear()
-        await process_main_menu(message, state)
     else:
-        await message.answer("❌ Неверный пароль. Попробуйте еще раз или нажмите 'Главное меню'.")
+        await message.answer("❌ Неверный пароль. Попробуйте еще раз.")
 
-@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📊 Статистика")
-async def process_admin_stats(message: Message):
+@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📊 Проверить фото")
+async def process_admin_check_photos(message: Message):
     try:
-        photo_count = 0
-        all_photos = []
+        all_photos = photo_map.get_all_photos()
+        photo_count = len(all_photos)
+        
+        hair_count = 0
+        body_count = 0
+        
+        for key, file_id in all_photos.items():
+            if file_id:
+                if key in config.PHOTO_STRUCTURE.get("волосы", {}):
+                    hair_count += 1
+                elif key in config.PHOTO_STRUCTURE.get("тело", {}):
+                    body_count += 1
 
-        if is_db_connected():
-            try:
-                photo_count = await photo_db.count_photos()
-                all_photos = await photo_db.get_all_photos()
-            except Exception as e:
-                logger.error(f"❌ Ошибка получения статистики БД: {e}")
-
-        stats_text = "📊 <b>Статистика базы данных</b>\n\n"
-        stats_text += f"📈 <b>Всего фото:</b> {photo_count}\n\n"
-
-        categories = {}
-        for photo in all_photos:
-            cat = photo['category']
-            categories[cat] = categories.get(cat, 0) + 1
-
-        for cat, count in categories.items():
-            stats_text += f"• <b>{cat}:</b> {count}\n"
-
+        stats_text = "📊 <b>Статистика фото</b>\n\n"
+        stats_text += f"• Всего загружено: {photo_count}\n"
+        stats_text += f"• Волосы: {hair_count}\n"
+        stats_text += f"• Тело: {body_count}\n\n"
+        
+        if photo_count < 5:
+            stats_text += "⚠️ <b>Внимание:</b> Загружено мало фото. Рекомендуется загрузить основные продукты."
+        
         await message.answer(
             stats_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboards.admin_category_keyboard()
+            reply_markup=keyboards.admin_main_keyboard()
         )
 
     except Exception as e:
-        logger.error(f"❌ Ошибка в process_admin_stats: {e}")
-        await message.answer("❌ Ошибка при получении статистики.")
+        logger.error(f"❌ Ошибка при проверке фото: {e}")
+        await message.answer("❌ Ошибка при проверке фото.")
 
-@dp.message(AdminState.ADMIN_MAIN_MENU, F.text.in_(["💇‍♀️ Волосы", "🧴 Тело"]))
+@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📸 Получить file_id")
+async def process_admin_get_file_id(message: Message, state: FSMContext):
+    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
+    await message.answer(
+        "📸 <b>Получение file_id фото</b>\n\nВыберите категорию:",
+        reply_markup=keyboards.admin_category_keyboard()
+    )
+
+@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text.in_(["💇‍♀️ Волосы", "🧴 Тело"]))
 async def process_admin_category(message: Message, state: FSMContext):
     category = "волосы" if message.text == "💇‍♀️ Волосы" else "тело"
     await state.update_data(admin_category=category)
-    await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
-
+    
     await message.answer(
         f"Выберите подкатегорию для <b>{category}</b>:",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.admin_subcategory_keyboard(category)
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text != "↩️ Назад к категориям")
+@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text != "↩️ Назад")
 async def process_admin_subcategory(message: Message, state: FSMContext):
     data = await state.get_data()
     category = data.get("admin_category")
@@ -786,19 +610,18 @@ async def process_admin_subcategory(message: Message, state: FSMContext):
 
     await message.answer(
         f"Выберите продукт в подкатегории <b>{subcategory}</b>:",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.admin_products_keyboard(category, subcategory)
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text == "↩️ Назад к категориям")
+@dp.message(AdminState.ADMIN_CHOOSING_SUBCATEGORY, F.text == "↩️ Назад")
 async def process_admin_back_to_categories(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_MAIN_MENU)
     await message.answer(
-        "Выберите категорию:",
-        reply_markup=keyboards.admin_category_keyboard()
+        "Главное меню админки:",
+        reply_markup=keyboards.admin_main_keyboard()
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_PRODUCT_NAME, F.text != "↩️ Назад к подкатегориям")
+@dp.message(AdminState.ADMIN_CHOOSING_PRODUCT_NAME, F.text != "↩️ Назад")
 async def process_admin_product(message: Message, state: FSMContext):
     data = await state.get_data()
     category = data.get("admin_category")
@@ -815,30 +638,29 @@ async def process_admin_product(message: Message, state: FSMContext):
         await message.answer("❌ Продукт не найден. Пожалуйста, выберите из списка.")
         return
 
-    await state.update_data(
-        admin_product_key=product_key,
-        admin_display_name=product_display_name
-    )
-
+    await state.update_data(admin_product_key=product_key)
     await state.set_state(AdminState.ADMIN_WAITING_PHOTO)
+    
+    current_file_id = photo_map.get_photo_file_id(product_key)
+    status = "✅ Уже есть" if current_file_id else "❌ Нет фото"
+    
     await message.answer(
-        f"📷 <b>Теперь отправьте фото для продукта:</b>\n\n"
+        f"📸 <b>Отправьте фото для продукта:</b>\n\n"
         f"<b>Продукт:</b> {product_display_name}\n"
-        f"<b>Категория:</b> {category}\n"
-        f"<b>Подкатегория:</b> {subcategory}\n\n"
-        f"<i>Отправьте одно фото.</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=keyboards.admin_cancel_photo_keyboard()
+        f"<b>Ключ:</b> <code>{product_key}</code>\n"
+        f"<b>Статус:</b> {status}\n\n"
+        f"<i>После отправки фото вы получите его file_id.</i>\n"
+        f"<i>Скопируйте file_id и вставьте в файл photo_map.py</i>",
+        reply_markup=ReplyKeyboardRemove()
     )
 
-@dp.message(AdminState.ADMIN_CHOOSING_PRODUCT_NAME, F.text == "↩️ Назад к подкатегориям")
+@dp.message(AdminState.ADMIN_CHOOSING_PRODUCT_NAME, F.text == "↩️ Назад")
 async def process_admin_back_to_subcategories(message: Message, state: FSMContext):
     data = await state.get_data()
     category = data.get("admin_category")
     await state.set_state(AdminState.ADMIN_CHOOSING_SUBCATEGORY)
     await message.answer(
         f"Выберите подкатегорию для <b>{category}</b>:",
-        parse_mode=ParseMode.HTML,
         reply_markup=keyboards.admin_subcategory_keyboard(category)
     )
 
@@ -847,171 +669,63 @@ async def process_admin_photo(message: Message, state: FSMContext):
     try:
         data = await state.get_data()
         product_key = data.get("admin_product_key")
-        category = data.get("admin_category")
-        subcategory = data.get("admin_subcategory")
-        display_name = data.get("admin_display_name")
-
-        if not all([product_key, category, subcategory, display_name]):
-            await message.answer("❌ Ошибка: данные продукта не найдены.")
+        
+        if not product_key:
+            await message.answer("❌ Ошибка: продукт не выбран.")
             await state.set_state(AdminState.ADMIN_MAIN_MENU)
             await message.answer(
                 "Возврат в админ-меню.",
-                reply_markup=keyboards.admin_category_keyboard()
+                reply_markup=keyboards.admin_main_keyboard()
             )
             return
 
         photo = message.photo[-1]
         file_id = photo.file_id
 
-        # Используем метод save_photo из photo_database
-        success = await photo_db.save_photo(
-            product_key=product_key,
-            file_id=file_id,
-            category=category,
-            subcategory=subcategory,
-            display_name=display_name
+        # Находим отображаемое имя для продукта
+        display_name = product_key
+        for category in config.PHOTO_STRUCTURE.values():
+            for subcat_products in category.values():
+                for key, name in subcat_products:
+                    if key == product_key:
+                        display_name = name
+                        break
+
+        await message.answer(
+            f"✅ <b>Фото получено!</b>\n\n"
+            f"<b>Продукт:</b> {display_name}\n"
+            f"<b>Ключ:</b> <code>{product_key}</code>\n\n"
+            f"<b>file_id:</b>\n<code>{file_id}</code>\n\n"
+            f"<i>Скопируйте file_id и вставьте в файл photo_map.py:</i>\n\n"
+            f"<code>\"{product_key}\": \"{file_id}\",</code>\n\n"
+            f"После этого перезапустите бота.",
+            reply_markup=keyboards.admin_main_keyboard()
         )
 
-        if success:
-            photo_count = 0
-            if is_db_connected():
-                try:
-                    photo_count = await photo_db.count_photos()
-                except Exception:
-                    pass
-            
-            await message.answer(
-                f"✅ <b>Фото успешно загружено!</b>\n\n"
-                f"<b>Продукт:</b> {display_name}\n"
-                f"<b>Категория:</b> {category}\n"
-                f"<b>Подкатегория:</b> {subcategory}\n"
-                f"<b>Ключ:</b> <code>{product_key}</code>\n\n"
-                f"📊 <b>Всего фото в базе:</b> {photo_count}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboards.admin_category_keyboard()
-            )
-            logger.info(f"✅ Админ загрузил фото: {product_key} ({display_name})")
-        else:
-            await message.answer(
-                "❌ <b>Ошибка при сохранении в базу данных!</b>\n\n"
-                "Проверьте:\n"
-                "1. Подключение к PostgreSQL\n"
-                "2. Правильность DATABASE_URL\n"
-                "3. Доступность базы данных",
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboards.admin_category_keyboard()
-            )
-
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
+        logger.info(f"📸 Админ получил file_id для {product_key}: {file_id[:20]}...")
 
     except Exception as e:
         logger.error(f"❌ Ошибка при обработке фото админа: {e}", exc_info=True)
         await message.answer(
-            f"❌ <b>Критическая ошибка:</b>\n\n<code>{str(e)[:200]}</code>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboards.admin_category_keyboard()
+            f"❌ <b>Ошибка:</b>\n\n<code>{str(e)[:200]}</code>",
+            reply_markup=keyboards.admin_main_keyboard()
         )
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
 
-@dp.message(AdminState.ADMIN_WAITING_PHOTO, F.text == "❌ Отмена")
-async def process_admin_cancel_photo(message: Message, state: FSMContext):
-    await state.set_state(AdminState.ADMIN_MAIN_MENU)
-    await message.answer(
-        "Загрузка фото отменена.",
-        reply_markup=keyboards.admin_category_keyboard()
-    )
-
 # ==================== ЗАПУСК БОТА ====================
-
-async def on_startup():
-    """Действия при запуске бота"""
-    logger.info("🤖 Бот запускается...")
-
-    # Инициализация базы данных
-    try:
-        success = await safe_db_init()
-        if success:
-            logger.info("✅ База данных инициализирована успешно")
-            
-            # Проверяем подключение
-            if is_db_connected():
-                try:
-                    photo_count = await photo_db.count_photos()
-                    logger.info(f"📸 Фото в базе: {photo_count}")
-                except Exception as e:
-                    logger.warning(f"⚠️ Не удалось получить количество фото: {e}")
-        else:
-            logger.warning("⚠️ База данных не инициализирована, работаем в режиме без фото")
-    except Exception as e:
-        logger.error(f"❌ Ошибка при инициализации БД: {e}")
-
-    # Запуск health check сервера
-    try:
-        health_runner = await start_health_server()
-        logger.info("🌐 Health check сервер запущен")
-    except Exception as e:
-        logger.error(f"❌ Ошибка запуска health check сервера: {e}")
-
-    # Запуск self-ping системы
-    asyncio.create_task(self_ping_task())
-    logger.info("🔔 Self-ping система активирована")
-
-    # Установка webhook или опроса
-    await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("✅ Бот готов к работе!")
-
-async def on_shutdown():
-    """Действия при выключении бота"""
-    logger.info("🛑 Бот выключается...")
-    try:
-        if hasattr(photo_db, 'close'):
-            await photo_db.close()
-            logger.info("🗄️ Соединение с БД закрыто")
-    except Exception as e:
-        logger.error(f"❌ Ошибка при закрытии БД: {e}")
 
 async def main():
     """Основная функция запуска бота"""
     try:
-        # Регистрация обработчиков startup/shutdown
-        dp.startup.register(on_startup)
-        dp.shutdown.register(on_shutdown)
-
-        logger.info("🚀 Запуск бота с работающим health check...")
-
-        # СИЛЬНАЯ ОЧИСТКА СТАРОГО ПОДКЛЮЧЕНИЯ
-        try:
-            # 1. Удаляем webhook
-            await bot.delete_webhook(drop_pending_updates=True)
-            
-            # 2. Закрываем старую сессию
-            if hasattr(bot, 'session') and bot.session and not bot.session.closed:
-                await bot.session.close()
-                logger.info("✅ Закрыта старая сессия бота")
-                
-            # 3. Ждем 3 секунды для гарантии
-            logger.info("⏳ Ждем завершения старой сессии...")
-            await asyncio.sleep(3)
-            
-            # 4. Создаем НОВУЮ сессию
-            session = AiohttpSession()
-            bot.session = session
-            logger.info("✅ Создана новая сессия бота")
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Ошибка при очистке сессии: {e}")
-            # Продолжаем в любом случае
-
-        # Запуск поллинга с увеличенными таймаутами
-        await dp.start_polling(
-            bot, 
-            skip_updates=True,
-            allowed_updates=dp.resolve_used_update_types(),
-            close_bot_session=False,  # Предотвращает конфликты инстансов
-            polling_timeout=30,       # Увеличиваем таймаут
-            handle_signals=False      # Отключаем обработку сигналов
-        )
-
+        logger.info("🚀 Запуск бота со статическим хранилищем фото...")
+        
+        # Удаляем webhook для чистого запуска
+        await bot.delete_webhook(drop_pending_updates=True)
+        
+        # Запускаем поллинг
+        await dp.start_polling(bot)
+        
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
         raise
