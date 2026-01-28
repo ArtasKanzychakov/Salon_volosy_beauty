@@ -7,6 +7,8 @@ import logging
 import asyncio
 from datetime import datetime
 from typing import List, Dict
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
@@ -33,7 +35,44 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Инициализация бота
+# ==================== HEALTH CHECK SERVER ====================
+
+class HealthHandler(BaseHTTPRequestHandler):
+    """Обработчик HTTP запросов для health check"""
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        elif self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html')
+            self.end_headers()
+            self.wfile.write(b'<h1>Bot is running!</h1>')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Отключаем стандартное логирование запросов в консоль
+        pass
+
+def run_health_server():
+    """Запуск HTTP сервера для health check"""
+    port = int(os.environ.get('PORT', 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    logger.info(f"🌐 Health check сервер запущен на порту {port}")
+    server.serve_forever()
+
+def start_health_server():
+    """Запуск health check сервера в отдельном потоке"""
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    logger.info("🔔 Health check система активирована")
+
+# ==================== ИНИЦИАЛИЗАЦИЯ БОТА ====================
+
 bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
@@ -1138,13 +1177,17 @@ async def main():
     """Основная функция запуска бота"""
     try:
         logger.info("🚀 Запуск бота с массовой загрузкой фото...")
-
+        
+        # Запускаем health check сервер
+        start_health_server()
+        logger.info("✅ Health check сервер запущен")
+        
         # Удаляем webhook для чистого запуска
         await bot.delete_webhook(drop_pending_updates=True)
-
+        
         # Запускаем поллинг
         await dp.start_polling(bot)
-
+        
     except Exception as e:
         logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
         raise
