@@ -11,22 +11,8 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 if not BOT_TOKEN:
     print("⚠️ ВНИМАНИЕ: BOT_TOKEN не найден в переменных окружения!")
 
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin2026")
-
-# ID администраторов (добавьте свои ID)
-ADMIN_IDS: List[int] = []
-
-# Добавьте свои ID Telegram (можно несколько через запятую в .env)
-try:
-    admin_ids_str = os.environ.get("ADMIN_IDS", "")
-    if admin_ids_str:
-        ADMIN_IDS = [int(id_str.strip()) for id_str in admin_ids_str.split(",")]
-except:
-    pass
-
-# Если не указаны в .env, можно добавить вручную
-if not ADMIN_IDS:
-    ADMIN_IDS = [123456789]  # Замените на свой ID
+# Пароль для входа в админ-панель
+ADMIN_PASSWORD = "admin2026"
 
 # ==================== НАСТРОЙКИ АДМИН-ПАНЕЛИ ====================
 
@@ -144,7 +130,7 @@ PHOTO_MAPPING = {
         "чувствительная_кожа": [],
         "объем": ["biolipid_spray"],
         "оттеночная_шоколад": ["mask_cold_chocolate"],
-        "оттеночная_медный": ["mask_copper"],
+        "оттенечная_медный": ["mask_copper"],
     }
 }
 
