@@ -137,9 +137,11 @@ def admin_category_bulk_keyboard() -> InlineKeyboardMarkup:
     
     for category_name, subcategories in config.PHOTO_STRUCTURE_ADMIN.items():
         emoji = "💇‍♀️" if "Волосы" in category_name else "🧴"
+        # Используем индексы для callback_data
+        category_key = "волосы" if "волосы" in category_name.lower() else "тело"
         builder.add(InlineKeyboardButton(
             text=f"{emoji} {category_name}",
-            callback_data=f"bulk_category:{category_name.split()[-1].lower()}"
+            callback_data=f"bulk_category:{category_key}"
         ))
     
     builder.adjust(1)
@@ -150,19 +152,21 @@ def admin_subcategory_bulk_keyboard(category: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     category_key = "волосы" if "волосы" in category.lower() else "тело"
-    subcategories = config.PHOTO_STRUCTURE_ADMIN.get(
-        "💇‍♀️ Волосы" if category_key == "волосы" else "🧴 Тело", 
-        {}
-    )
+    category_display = "💇‍♀️ Волосы" if category_key == "волосы" else "🧴 Тело"
+    subcategories = list(config.PHOTO_STRUCTURE_ADMIN.get(category_display, {}).items())
     
-    for subcategory_name in subcategories.keys():
+    for i, (subcategory_name, products) in enumerate(subcategories):
+        # Используем индекс вместо названия
         builder.add(InlineKeyboardButton(
             text=subcategory_name,
-            callback_data=f"bulk_subcategory:{category_key}:{subcategory_name}"
+            callback_data=f"bulk_subcategory_idx:{category_key}:{i}"
         ))
     
     builder.row(
-        InlineKeyboardButton(text="↩️ Назад к категориям", callback_data="bulk_back_to_categories")
+        InlineKeyboardButton(
+            text="↩️ Назад к категориям", 
+            callback_data="bulk_back_to_categories"
+        )
     )
     builder.adjust(1)
     return builder.as_markup()
