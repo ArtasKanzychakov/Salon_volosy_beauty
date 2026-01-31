@@ -95,19 +95,29 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
         for photo_key in photo_keys:
             file_id = photo_map.get_photo_file_id(photo_key)
             if file_id:
-                # Находим отображаемое имя
+                # Находим отображаемое имя и цену
                 display_name = photo_key
+                price = ""
+                
+                # Ищем отображаемое имя в структуре
                 for category_data in config.PHOTO_STRUCTURE_ADMIN.values():
                     for subcat_products in category_data.values():
                         for key, name in subcat_products:
                             if key == photo_key:
                                 display_name = name
                                 break
-
+                
+                # Получаем цену из конфига
+                price = config.PRODUCT_PRICES.get(photo_key, "")
+                
+                caption_text = f"{caption}\n<b>{display_name}</b>" if caption else f"<b>{display_name}</b>"
+                if price:
+                    caption_text += f"\n💰 Цена: {price}"
+                
                 await bot.send_photo(
                     chat_id=chat_id,
                     photo=file_id,
-                    caption=f"{caption}\n<b>{display_name}</b>" if caption else f"<b>{display_name}</b>",
+                    caption=caption_text,
                     parse_mode=ParseMode.HTML
                 )
                 sent_count += 1
@@ -178,7 +188,7 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
 
         # Добавляем фото по цвету волос
         if hair_color in ["Шатенка", "Русая"]:
-            chocolate_keys = config.PHOTO_MAPPING["волосы"].get("оттенечная_шоколад", [])
+            chocolate_keys = config.PHOTO_MAPPING["волосы"].get("оттеночная_шоколад", [])
             photo_keys.extend(chocolate_keys)
         elif hair_color == "Рыжая":
             copper_keys = config.PHOTO_MAPPING["волосы"].get("оттенечная_медный", [])
@@ -605,6 +615,7 @@ async def process_hair_volume(message: Message, state: FSMContext):
 
     hair_type = get_user_data_value(message.from_user.id, "hair_type", "")
 
+    # Только для обычных "Окрашенных" показываем выбор цвета
     if hair_type == "Окрашенные":
         await state.set_state(UserState.HAIR_CHOOSING_COLOR)
         await message.answer(
@@ -612,9 +623,10 @@ async def process_hair_volume(message: Message, state: FSMContext):
             reply_markup=keyboards.hair_color_keyboard(hair_type)
         )
     else:
+        # Для блондинок и натуральных сразу показываем результаты
         await show_hair_results(message, state)
 
-@dp.message(UserState.HAIR_CHOOSING_COLOR, F.text.in_(["Блондинка", "Брюнетка", "Шатенка", "Русая", "Рыжая"]))
+@dp.message(UserState.HAIR_CHOOSING_COLOR, F.text.in_(["Брюнетка", "Шатенка", "Русая", "Рыжая"]))
 async def process_hair_color(message: Message, state: FSMContext):
     hair_color = message.text
     save_user_data(message.from_user.id, "hair_color", hair_color)
