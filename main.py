@@ -17,6 +17,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.utils.keyboard import InlineKeyboardBuilder  # ← ДОБАВЬТЕ ЭТОТ ИМПОРТ
 
 import config
 from states import UserState, AdminState
@@ -333,7 +334,7 @@ async def cmd_status(message: Message):
         )
 
         if stats['percentage'] < 50:
-            status_text += "⚠️ <i>Рекомендуется загрузить фото продуктов через админ  панель</i>"
+            status_text += "⚠️ <i>Рекомендуется загрузить фото продуктов через админ-панель</i>"
 
         await message.answer(
             status_text,
@@ -759,7 +760,7 @@ async def process_admin_bulk_upload(message: Message, state: FSMContext):
         f"📈 <b>Прогресс:</b> {stats['percentage']}%\n\n"
         f"<b>Как это работает:</b>\n"
         f"1. Выберите категорию (Волосы/Тело)\n"
-        f"2. Выберите подкатегориу\n"
+        f"2. Выберите подкатегорию\n"
         f"3. Отправляйте фото по одному\n"
         f"4. file_id автоматически сохранятся\n\n"
         f"Выберите категорию для загрузки:",
@@ -804,7 +805,7 @@ async def process_bulk_hair(message: Message):
 async def process_bulk_body(message: Message):
     await message.answer(
         "🧴 <b>Загрузка фото для ТЕЛА</b>\n\n"
-        "Выберите подкатегорию:",
+        "Выберите подкатегориу:",
         reply_markup=keyboards.admin_category_bulk_keyboard()
     )
 
@@ -905,8 +906,8 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
             text += f"❌ <i>Еще не загружено</i>\n\n"
             text += f"<i>Отправьте фото этого продукта</i>"
         
-        # Создаем inline-клавиатуру
-        builder = types.InlineKeyboardBuilder()
+        # Создаем inline-клавиатуру - используем InlineKeyboardBuilder из aiogram.utils.keyboard
+        builder = InlineKeyboardBuilder()  # ← ИСПРАВЛЕНО: убрано types.
         builder.row(
             types.InlineKeyboardButton(
                 text="⏭️ Пропустить",
@@ -981,7 +982,7 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
         text += f"❌ <i>Еще не загружено</i>\n\n"
         text += f"<i>Отправьте фото этого продукта</i>"
 
-    builder = types.InlineKeyboardBuilder()
+    builder = InlineKeyboardBuilder()  # ← ИСПРАВЛЕНО
     builder.row(
         types.InlineKeyboardButton(
             text="⏭️ Пропустить",
@@ -1086,7 +1087,7 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             text += f"❌ <i>Еще не загружено</i>\n\n"
             text += f"<i>Отправьте фото этого продукта</i>"
 
-        builder = types.InlineKeyboardBuilder()
+        builder = InlineKeyboardBuilder()  # ← ИСПРАВЛЕНО
         builder.row(
             types.InlineKeyboardButton(
                 text="⏭️ Пропустить",
