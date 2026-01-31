@@ -1262,6 +1262,20 @@ async def main():
         
         # Удаляем webhook для чистого запуска
         await bot.delete_webhook(drop_pending_updates=True)
+
+        # ЗАПУСКАЕМ KEEP-ALIVE ЗАДАЧУ (чтобы бот не спал на Render Free)
+        async def keep_alive():
+            while True:
+                try:
+                    me = await bot.get_me()
+                    logger.info(f"🤖 Keep-alive: Бот активен (@{me.username})")
+                except Exception as e:
+                    logger.error(f"❌ Keep-alive ошибка: {e}")
+                await asyncio.sleep(600)  # 10 минут
+        
+        # Запускаем в фоне
+        asyncio.create_task(keep_alive())
+        logger.info("✅ Keep-alive задача запущена (пинг каждые 10 минут)")
         
         # Запускаем поллинг
         await dp.start_polling(bot)
