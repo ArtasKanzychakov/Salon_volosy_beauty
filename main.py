@@ -369,6 +369,38 @@ async def cmd_admin(message: Message, state: FSMContext):
         reply_markup=keyboards.back_to_menu_keyboard()
     )
 
+# ==================== ВЫХОД ИЗ АДМИНКИ ====================
+
+@dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "🏠 В главное меню")
+async def process_admin_to_main_menu(message: Message, state: FSMContext):
+    await state.clear()
+    
+    await message.answer(
+        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        reply_markup=keyboards.main_menu_keyboard()
+    )
+    await state.set_state(UserState.CHOOSING_CATEGORY)
+
+@dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "🏠 В главное меню")
+async def process_admin_photos_to_main_menu(message: Message, state: FSMContext):
+    await state.clear()
+    
+    await message.answer(
+        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        reply_markup=keyboards.main_menu_keyboard()
+    )
+    await state.set_state(UserState.CHOOSING_CATEGORY)
+
+@dp.message(AdminState.ADMIN_BULK_UPLOAD, F.text == "🏠 В главное меню")
+async def process_admin_bulk_to_main_menu(message: Message, state: FSMContext):
+    await state.clear()
+    
+    await message.answer(
+        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        reply_markup=keyboards.main_menu_keyboard()
+    )
+    await state.set_state(UserState.CHOOSING_CATEGORY)
+    
 # ==================== НАВИГАЦИОННЫЕ КНОПКИ ====================
 
 @dp.message(F.text == "❓ Помощь")
