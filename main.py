@@ -333,7 +333,7 @@ async def cmd_status(message: Message):
         )
 
         if stats['percentage'] < 50:
-            status_text += "⚠️ <i>Рекомендуется загрузить фото продуктов через админ-панель</i>"
+            status_text += "⚠️ <i>Рекомендуется загрузить фото продуктов через админ  панель</i>"
 
         await message.answer(
             status_text,
@@ -759,7 +759,7 @@ async def process_admin_bulk_upload(message: Message, state: FSMContext):
         f"📈 <b>Прогресс:</b> {stats['percentage']}%\n\n"
         f"<b>Как это работает:</b>\n"
         f"1. Выберите категорию (Волосы/Тело)\n"
-        f"2. Выберите подкатегорию\n"
+        f"2. Выберите подкатегориу\n"
         f"3. Отправляйте фото по одному\n"
         f"4. file_id автоматически сохранятся\n\n"
         f"Выберите категорию для загрузки:",
@@ -858,70 +858,77 @@ async def process_bulk_back_to_categories(callback: CallbackQuery):
 
     await callback.answer()
 
-@dp.callback_query(F.data.startswith("bulk_subcategory:"))
+@dp.callback_query(F.data.startswith("bulk_subcategory_idx:"))
 async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
-    parts = callback.data.split(":")
-    category = parts[1]  # "волосы" или "тело"
-    subcategory = parts[2]
-
-    category_name = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
-    subcategory_name = subcategory
-
-    # Получаем список продуктов для этой подкатегории
-    category_key = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
-    products = config.PHOTO_STRUCTURE_ADMIN[category_key][subcategory_name]
-
-    # Сохраняем текущую подкатегорию в состоянии
-    await state.update_data(
-        bulk_category=category,
-        bulk_subcategory=subcategory_name,
-        bulk_products=products,
-        bulk_current_index=0
-    )
-
-    await state.set_state(AdminState.ADMIN_WAITING_BULK_PHOTO)
-
-    # Показываем первый продукт для загрузки
-    product_key, product_name = products[0]
-    current_file_id = photo_map.get_photo_file_id(product_key)
-
-    text = (
-        f"📥 <b>Массовая загрузка</b>\n\n"
-        f"<b>Категория:</b> {category_name}\n"
-        f"<b>Подкатегория:</b> {subcategory_name}\n\n"
-        f"<b>Текущий продукт (1/{len(products)}):</b>\n"
-        f"• {product_name}\n"
-        f"• Ключ: <code>{product_key}</code>\n\n"
-    )
-
-    if current_file_id:
-        text += f"✅ <i>Уже загружено</i>\n"
-        text += f"• file_id: <code>{current_file_id[:30]}...</code>\n\n"
-        text += f"<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
-    else:
-        text += f"❌ <i>Еще не загружено</i>\n\n"
-        text += f"<i>Отправьте фото этого продукта</i>"
-
-    # Создаем inline-клавиатуру
-    builder = types.InlineKeyboardBuilder()
-    builder.row(
-        types.InlineKeyboardButton(
-            text="⏭️ Пропустить",
-            callback_data=f"bulk_skip:{product_key}"
-        ),
-        types.InlineKeyboardButton(
-            text="🛑 Остановить",
-            callback_data="bulk_stop"
+    try:
+        parts = callback.data.split(":")
+        category = parts[1]  # "волосы" или "тело"
+        idx = int(parts[2])  # индекс подкатегории
+        
+        category_name = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
+        subcategories = list(config.PHOTO_STRUCTURE_ADMIN[category_name].items())
+        
+        if idx >= len(subcategories):
+            await callback.answer("❌ Ошибка индекса")
+            return
+        
+        subcategory_name, products = subcategories[idx]
+        
+        # Сохраняем текущую подкатегорию в состоянии
+        await state.update_data(
+            bulk_category=category,
+            bulk_subcategory=subcategory_name,
+            bulk_products=products,
+            bulk_current_index=0
         )
-    )
-
-    await callback.message.edit_text(
-        text,
-        reply_markup=builder.as_markup(),
-        parse_mode=ParseMode.HTML
-    )
-
-    await callback.answer()
+        
+        await state.set_state(AdminState.ADMIN_WAITING_BULK_PHOTO)
+        
+        # Показываем первый продукт для загрузки
+        product_key, product_name = products[0]
+        current_file_id = photo_map.get_photo_file_id(product_key)
+        
+        text = (
+            f"📥 <b>Массовая загрузка</b>\n\n"
+            f"<b>Категория:</b> {category_name}\n"
+            f"<b>Подкатегория:</b> {subcategory_name}\n\n"
+            f"<b>Текущий продукт (1/{len(products)}):</b>\n"
+            f"• {product_name}\n"
+            f"• Ключ: <code>{product_key}</code>\n\n"
+        )
+        
+        if current_file_id:
+            text += f"✅ <i>Уже загружено</i>\n"
+            text += f"• file_id: <code>{current_file_id[:30]}...</code>\n\n"
+            text += f"<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
+        else:
+            text += f"❌ <i>Еще не загружено</i>\n\n"
+            text += f"<i>Отправьте фото этого продукта</i>"
+        
+        # Создаем inline-клавиатуру
+        builder = types.InlineKeyboardBuilder()
+        builder.row(
+            types.InlineKeyboardButton(
+                text="⏭️ Пропустить",
+                callback_data=f"bulk_skip:{product_key}"
+            ),
+            types.InlineKeyboardButton(
+                text="🛑 Остановить",
+                callback_data="bulk_stop"
+            )
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=builder.as_markup(),
+            parse_mode=ParseMode.HTML
+        )
+        
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка в process_bulk_subcategory: {e}")
+        await callback.answer("❌ Произошла ошибка")
 
 @dp.callback_query(F.data.startswith("bulk_skip:"))
 async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
@@ -1013,6 +1020,8 @@ async def process_bulk_stop(callback: CallbackQuery, state: FSMContext):
 # Обработка фото в режиме массовой загрузки
 @dp.message(AdminState.ADMIN_WAITING_BULK_PHOTO, F.photo)
 async def process_bulk_photo(message: Message, state: FSMContext):
+    logger.info(f"📸 Получено фото в режиме массовой загрузки")
+    
     data = await state.get_data()
     products = data.get("bulk_products", [])
     current_index = data.get("bulk_current_index", 0)
@@ -1099,6 +1108,30 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             f"❌ <b>Ошибка сохранения!</b>\n\n"
             f"Не удалось сохранить фото для продукта: {product_name}\n"
             f"Ключ: <code>{product_key}</code>",
+            parse_mode=ParseMode.HTML
+        )
+
+# Fallback обработчик для текста в режиме массовой загрузки
+@dp.message(AdminState.ADMIN_WAITING_BULK_PHOTO)
+async def handle_bulk_state_text(message: Message, state: FSMContext):
+    data = await state.get_data()
+    products = data.get("bulk_products", [])
+    current_index = data.get("bulk_current_index", 0)
+    
+    if current_index < len(products):
+        product_key, product_name = products[current_index]
+        
+        await message.answer(
+            f"📸 <b>Вы в режиме загрузки фото!</b>\n\n"
+            f"<b>Текущий продукт:</b> {product_name}\n"
+            f"<b>Ключ:</b> <code>{product_key}</code>\n\n"
+            f"<i>Просто отправьте фото этого продукта или используйте кнопки.</i>",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await message.answer(
+            f"📸 <b>Режим загрузки фото</b>\n\n"
+            f"<i>Просто отправьте фото продукта.</i>",
             parse_mode=ParseMode.HTML
         )
 
