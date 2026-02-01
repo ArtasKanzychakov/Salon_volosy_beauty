@@ -7,6 +7,12 @@ import json
 import os
 from typing import Dict, List, Optional
 
+# Импортируем предзагруженные фото
+try:
+    from preloaded_photos import PRELOADED_PHOTOS
+except ImportError:
+    PRELOADED_PHOTOS = {}
+
 # ==================== ПУТЬ К ФАЙЛУ ХРАНЕНИЯ ====================
 PHOTO_MAP_FILE = "photo_map_data.json"
 
@@ -73,11 +79,13 @@ def load_photo_map() -> Dict[str, str]:
         if os.path.exists(PHOTO_MAP_FILE):
             with open(PHOTO_MAP_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
+        else:
+            # Если файла нет, инициализируем с предзагруженными фото
+            return PRELOADED_PHOTOS.copy()
     except Exception as e:
         print(f"⚠️ Ошибка загрузки фото-мапа: {e}")
-    
-    # Возвращаем пустой словарь, если файла нет или ошибка
-    return {}
+        # Возвращаем предзагруженные фото в случае ошибки
+        return PRELOADED_PHOTOS.copy()
 
 def save_photo_map(data: Dict[str, str]):
     """Сохранить фото-мап в файл"""
@@ -125,13 +133,17 @@ def get_missing_photos() -> List[Dict[str, str]]:
     missing = []
     
     for key, name in ALL_PHOTO_KEYS.items():
-        status = "✅ Загружено" if key in data and data[key] else "❌ Отсутствует"
+        file_id = data.get(key, "")
+        status = "✅ Загружено" if file_id else "❌ Отсутствует"
         missing.append({
             "key": key,
             "name": name,
             "status": status,
-            "file_id": data.get(key, "")
+            "file_id": file_id
         })
+    
+    # Сортируем: сначала отсутствующие, потом загруженные
+    missing.sort(key=lambda x: (0 if x["status"] == "❌ Отсутствует" else 1, x["name"]))
     
     return missing
 
@@ -149,9 +161,25 @@ def get_photo_stats() -> Dict[str, int]:
     }
 
 def reset_all_photos() -> bool:
-    """Сбросить все фото (очистить файл)"""
+    """Сбросить все фото (очистить файл и использовать предзагруженные)"""
+    try:
+        if os.path.exists(PHOTO_MAP_FILE):
+            os.remove(PHOTO_MAP_FILE)
+        # При сбросе возвращаемся к предзагруженным фото
+        return save_photo_map(PRELOADED_PHOTOS.copy())
+    except Exception as e:
+        print(f"❌ Ошибка сброса фото: {e}")
+        return False
+
+def initialize_with_preloaded():
+    """Инициализировать с предзагруженными фото"""
+    if PRELOADED_PHOTOS:
+        return save_photo_map(PRELOADED_PHOTOS.copy())
     return save_photo_map({})
 
 # Инициализируем файл при импорте
-if not os.path.exists(PHOTO_MAP_FILE):
+if not os.path.exists(PHOTO_MAP_FILE) and PRELOADED_PHOTOS:
+    print("📸 Инициализация с предзагруженными фото...")
+    initialize_with_preloaded()
+elif not os.path.exists(PHOTO_MAP_FILE):
     save_photo_map({})
