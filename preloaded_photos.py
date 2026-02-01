@@ -5,7 +5,7 @@ PRELOADED_PHOTOS.PY - Предзагруженные фото для бота
 
 # Словарь предзагруженных фото file_id
 PRELOADED_PHOTOS = {
-    # Тело (7 фото)
+    # Тело (8 фото) - ВСЕ ЕСТЬ
     "cream_body": "AgACAgIAAxkBAAIOAAFpfzB4tBVuXDSPxMqnVU2OwBq7EAACkQxrG7GC-UsvT4zgsq6mRAEAAwIAA3kAAzgE",
     "hydrophilic_oil": "AgACAgIAAxkBAAIOEGl_NjKQL00hYx32qwABSXAs1I95CwACtwxrG7GC-UtNsAABIZQivN8BAAMCAAN5AAM4BA",
     "body_butter": "AgACAgIAAxkBAAIOEml_NkXnNp7rDdmlY3ZkQ6KTz5L9AAK4DGsbsYL5S4M6zSq50aanAQADAgADeQADOAQ",
@@ -13,8 +13,9 @@ PRELOADED_PHOTOS = {
     "hualuronic_acid": "AgACAgIAAxkBAAIOFml_NnGtDhN-dDTHJc04sSvb-t9BAAK7DGsbsYL5S9GM-PCklmdyAQADAgADeQADOAQ",
     "body_scrub": "AgACAgIAAxkBAAIOGGl_NoRfPhckj9Y_FkOJdEPhKUyYAAK8DGsbsYL5Sx_bxSO-jWuPAQADAgADeQADOAQ",
     "shower_gel": "AgACAgIAAxkBAAIOGml_NpsncG784BDQ-jzy8BaCx43HAAK-DGsbsYL5S9RSnAJRcCAEAQADAgADeQADOAQ",
+    "perfumed_soap": "",  # НЕТ ФОТО - ОСТАВЬТЕ ПУСТЫМ
     
-    # Волосы (20 фото)
+    # Волосы (23 фото)
     # Для блондинок
     "blonde_shampoo": "AgACAgIAAxkBAAIOHGl_NrvpGa81qA2k_K9QHYGVohW6AALADGsbsYL5S7c9GM0nQ6isAQADAgADeQADOAQ",
     "blonde_conditioner": "AgACAgIAAxkBAAIOHml_NtHWaChZuYy4AzRRXT4Jwmv7AALBDGsbsYL5S3jjD_FOg4aaAQADAgADeQADOAQ",
@@ -24,6 +25,7 @@ PRELOADED_PHOTOS = {
     "mask_mother_of_pearl": "AgACAgIAAxkBAAIOJml_NzEresSOHklKJd6CShczRg0AA8YMaxuxgvlLsfMuQto5m7cBAAMCAAN5AAM4BA",
     
     # Для окрашенных волос
+    "colored_shampoo": "",  # НЕТ ФОТО - ОСТАВЬТЕ ПУСТЫМ
     "colored_conditioner": "AgACAgIAAxkBAAIOKGl_N2IMWBIw25WqP96rBrasELoaAALJDGsbsYL5Sy8We9GZpgqbAQADAgADeQADOAQ",
     "colored_mask": "AgACAgIAAxkBAAIOKml_N3dC3l2mH5M5xUdWYFlI6yE_AALNDGsbsYL5S_IxV81TFN6lAQADAgADeQADOAQ",
     
@@ -48,15 +50,15 @@ PRELOADED_PHOTOS = {
     
     # Оттеночные маски
     "mask_cold_chocolate": "AgACAgIAAxkBAAIOQml_ORP1MDVoRCIhZyBO2qnA258YAALlDGsbsYL5SzvEG6sZk0gHAQADAgADeQADOAQ",
-    "mask_copper": "AgACAgIAAxkBAAIORGl_OSYAAdYQpVkuui-jogsTVGA7kAAC5gxrG7GC-Us4UIZrHAH9MAEAAwIAA3kAAzgE",
+    "mask_copper": "AgACAgIAAxkBAAIORGl_OSYAAdYQpVkuui-jogsTVGA7kAAC5gxrG7GC-Uts4UIZrHAH9MAEAAwIAA3kAAzgE",
+    
+    # Для мужчин
+    "men_shampoo": "",  # НЕТ ФОТО - ОСТАВЬТЕ ПУСТЫМ
 }
 
 def initialize_preloaded_photos(photo_map_module):
     """
     Инициализировать предзагруженные фото в системе
-    
-    Args:
-        photo_map_module: модуль photo_map для доступа к функциям
     """
     loaded_count = 0
     missing_count = 0
@@ -83,13 +85,12 @@ def get_missing_products():
     Получить список продуктов, для которых нет фото в предзагрузке
     Возвращает список кортежей (ключ, название)
     """
-    from config import PHOTO_STRUCTURE_ADMIN
     from photo_map import ALL_PHOTO_KEYS
     
     missing_products = []
     
     for key, name in ALL_PHOTO_KEYS.items():
-        if key not in PRELOADED_PHOTOS:
+        if key not in PRELOADED_PHOTOS or not PRELOADED_PHOTOS[key]:
             missing_products.append((key, name))
     
     return missing_products
@@ -119,7 +120,7 @@ if __name__ == "__main__":
     missing_products = get_missing_products()
     if missing_products:
         print("\n📋 Отсутствующие продукты:")
-        for key, name in missing_products[:10]:  # Показываем первые 10
+        for key, name in missing_products[:10]:
             print(f"  • {name} (ключ: {key})")
         if len(missing_products) > 10:
             print(f"  ... и еще {len(missing_products) - 10} продуктов")
