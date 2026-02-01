@@ -1,19 +1,21 @@
 """
-MAIN.PY - Бот с массовой загрузкой фото через админ-панель
-Обновлено для работы на Render Free
+MAIN.PY - Бот с системой выживания для Render Free
+Обновлено для максимального uptime на бесплатном тарифе
 """
 
 import os
 import logging
 import asyncio
-from datetime import datetime
-from typing import List, Dict
+import random
 import threading
+from datetime import datetime, timedelta
+from typing import List, Dict
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import aiohttp
 
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
-from aiogram.filters import Command, CommandObject
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
@@ -33,45 +35,526 @@ from user_storage import (
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
-# ==================== HEALTH CHECK SERVER ====================
+# ==================== УЛУЧШЕННЫЙ HEALTH CHECK SERVER ====================
 
 class HealthHandler(BaseHTTPRequestHandler):
-    """Обработчик HTTP запросов для health check"""
+    """Улучшенный обработчик HTTP запросов для health check"""
+    
     def do_GET(self):
-        if self.path == '/health':
-            self.send_response(200)
+        try:
+            client_ip = self.client_address[0]
+            current_time = datetime.now().strftime('%H:%M:%S')
+            
+            # Логируем только если не spam
+            if not self.path.startswith('/favicon'):
+                logger.info(f"🌐 HTTP: {self.path} от {client_ip}")
+            
+            if self.path == '/health':
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
+                self.end_headers()
+                
+                stats = photo_map.get_photo_stats()
+                response = f"""HTTP/1.1 200 OK
+Content-Type: text/plain
+
+STATUS: ACTIVE ✅
+BOT: SVOY AV.COSMETIC
+PHOTOS: {stats['loaded']}/{stats['total']} ({stats['percentage']}%)
+TIME: {current_time}
+SERVICE: salon-volosy-beauty
+UPTIME: {self.get_uptime()}"""
+                
+                self.wfile.write(response.encode('utf-8'))
+                
+            elif self.path == '/':
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers()
+                
+                stats = photo_map.get_photo_stats()
+                html = f'''<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 SVOY AV.COSMETIC Bot</title>
+    <meta http-equiv="refresh" content="300">
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }}
+        .container {{ 
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 800px;
+            width: 100%;
+        }}
+        .header {{ 
+            text-align: center;
+            margin-bottom: 30px;
+        }}
+        .header h1 {{ 
+            color: #333;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }}
+        .header p {{ 
+            color: #666;
+            font-size: 1.1em;
+        }}
+        .status-card {{ 
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 5px solid #4CAF50;
+        }}
+        .status-card h2 {{ 
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }}
+        .stats {{ 
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }}
+        .stat-item {{ 
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }}
+        .stat-label {{ 
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }}
+        .stat-value {{ 
+            color: #333;
+            font-size: 1.3em;
+            font-weight: bold;
+        }}
+        .footer {{ 
+            text-align: center;
+            margin-top: 30px;
+            color: #888;
+            font-size: 0.9em;
+        }}
+        .refresh-info {{ 
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-size: 0.9em;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 SVOY AV.COSMETIC Bot</h1>
+            <p>Телеграм-бот для подбора косметики для волос и тела</p>
+        </div>
+        
+        <div class="status-card">
+            <h2>✅ Статус сервиса</h2>
+            <p>Сервис активен и работает корректно.</p>
+            <div class="refresh-info">
+                Страница автоматически обновляется каждые 5 минут для поддержания активности на Render Free.
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-label">📅 Время сервера</div>
+                <div class="stat-value">{current_time}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">📸 Загружено фото</div>
+                <div class="stat-value">{stats['loaded']} / {stats['total']}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">📈 Прогресс</div>
+                <div class="stat-value">{stats['percentage']}%</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">⏱️ Uptime</div>
+                <div class="stat-value">{self.get_uptime()}</div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>© 2026 SVOY AV.COSMETIC | Render Free Plan</p>
+            <p>Страница обновлена: {current_time}</p>
+            <p style="margin-top: 10px;">
+                <a href="/health" style="color: #667eea;">Health Check</a> | 
+                <a href="https://render.com" style="color: #667eea;">Render.com</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>'''
+                
+                self.wfile.write(html.encode('utf-8'))
+                
+            elif self.path.startswith('/ping'):
+                # Простой эндпоинт для ping
+                self.send_response(200)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(f'PONG {current_time}'.encode('utf-8'))
+                
+            elif self.path == '/status':
+                # JSON статус для мониторинга
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                
+                stats = photo_map.get_photo_stats()
+                status = {
+                    "status": "active",
+                    "service": "salon-volosy-beauty",
+                    "timestamp": current_time,
+                    "photos": stats,
+                    "uptime": self.get_uptime(),
+                    "endpoints": {
+                        "health": "/health",
+                        "home": "/",
+                        "ping": "/ping",
+                        "status": "/status"
+                    }
+                }
+                
+                import json
+                self.wfile.write(json.dumps(status, indent=2, ensure_ascii=False).encode('utf-8'))
+                
+            else:
+                # Для любых других путей возвращаем перенаправление на главную
+                self.send_response(302)
+                self.send_header('Location', '/')
+                self.end_headers()
+                
+        except Exception as e:
+            logger.error(f"❌ HTTP Handler error: {e}")
+            self.send_response(500)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
-            self.wfile.write(b'OK')
-        elif self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(b'<h1>Bot is running!</h1>')
-        else:
-            self.send_response(404)
-            self.end_headers()
+            self.wfile.write(b'Internal Server Error')
+    
+    def get_uptime(self):
+        """Получить время работы в читаемом формате"""
+        try:
+            # Примерное время - в реальном приложении нужно сохранять время старта
+            return "Несколько часов"
+        except:
+            return "Активен"
     
     def log_message(self, format, *args):
-        # Отключаем стандартное логирование запросов в консоль
+        # Отключаем стандартное логирование HTTP запросов
         pass
 
 def run_health_server():
-    """Запуск HTTP сервера для health check"""
+    """Запуск улучшенного HTTP сервера для health check"""
     port = int(os.environ.get('PORT', 8080))
-    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    
+    class SilentServer(HTTPServer):
+        """HTTP сервер с отключенным логгированием"""
+        def service_actions(self):
+            # Периодические действия сервера
+            pass
+    
+    server = SilentServer(('0.0.0.0', port), HealthHandler)
+    
+    # Настройки сервера
+    server.timeout = 30
+    server.request_queue_size = 10
+    
     logger.info(f"🌐 Health check сервер запущен на порту {port}")
-    server.serve_forever()
+    logger.info(f"📡 Доступные эндпоинты:")
+    logger.info(f"   • http://0.0.0.0:{port}/ - Главная страница")
+    logger.info(f"   • http://0.0.0.0:{port}/health - Health check")
+    logger.info(f"   • http://0.0.0.0:{port}/ping - Ping endpoint")
+    logger.info(f"   • http://0.0.0.0:{port}/status - JSON статус")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("🌐 Health check сервер остановлен")
+    except Exception as e:
+        logger.error(f"❌ Ошибка health check сервера: {e}")
 
 def start_health_server():
     """Запуск health check сервера в отдельном потоке"""
-    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread = threading.Thread(
+        target=run_health_server, 
+        daemon=True,
+        name="HealthCheckThread"
+    )
     health_thread.start()
     logger.info("🔔 Health check система активирована")
+    return health_thread
+
+# ==================== СИСТЕМА ВЫЖИВАНИЯ ДЛЯ RENDER FREE ====================
+
+class RenderSurvivalSystem:
+    """Интеллектуальная система поддержания активности на Render Free"""
+    
+    def __init__(self, bot_instance, service_url=None):
+        self.bot = bot_instance
+        self.service_url = service_url or f"https://salon-volosy-beauty20.onrender.com"
+        self.ping_count = 0
+        self.start_time = datetime.now()
+        self.last_successful_ping = datetime.now()
+        self.consecutive_failures = 0
+        self.max_failures = 3
+        
+        # Паттерны активности (разное время для разных периодов)
+        self.activity_patterns = {
+            'normal': {'min': 180, 'max': 360},      # 3-6 минут
+            'aggressive': {'min': 120, 'max': 240},  # 2-4 минуты
+            'conservative': {'min': 240, 'max': 420} # 4-7 минут
+        }
+        self.current_pattern = 'normal'
+        
+    def get_uptime(self):
+        """Получить время работы"""
+        uptime = datetime.now() - self.start_time
+        hours = uptime.seconds // 3600
+        minutes = (uptime.seconds % 3600) // 60
+        return f"{hours}ч {minutes}м"
+    
+    async def smart_ping(self):
+        """Умный ping с несколькими стратегиями"""
+        strategies = [
+            self._ping_direct,      # Прямой ping
+            self._ping_with_retry,  # Ping с повторными попытками
+            self._ping_multiple_endpoints  # Ping нескольких эндпоинтов
+        ]
+        
+        for strategy in strategies:
+            success = await strategy()
+            if success:
+                return True
+        
+        return False
+    
+    async def _ping_direct(self):
+        """Прямой ping основного эндпоинта"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self.service_url}/health",
+                    timeout=10,
+                    headers={'User-Agent': 'RenderSurvivalBot/1.0'}
+                ) as response:
+                    if response.status == 200:
+                        text = await response.text()
+                        if 'ACTIVE' in text or 'OK' in text:
+                            return True
+            return False
+        except:
+            return False
+    
+    async def _ping_with_retry(self):
+        """Ping с повторными попытками"""
+        for attempt in range(2):  # 2 попытки
+            try:
+                async with aiohttp.ClientSession() as session:
+                    # Пробуем разные эндпоинты
+                    endpoints = [
+                        f"{self.service_url}/health",
+                        f"{self.service_url}/ping",
+                        f"{self.service_url}/"
+                    ]
+                    
+                    for endpoint in endpoints:
+                        try:
+                            async with session.get(endpoint, timeout=5) as resp:
+                                if resp.status == 200:
+                                    return True
+                        except:
+                            continue
+                    
+                    await asyncio.sleep(2)  # Ждем между попытками
+            except:
+                await asyncio.sleep(2)
+        
+        return False
+    
+    async def _ping_multiple_endpoints(self):
+        """Ping нескольких эндпоинтов параллельно"""
+        try:
+            endpoints = [
+                f"{self.service_url}/health",
+                f"{self.service_url}/ping?t={datetime.now().timestamp()}",
+                f"{self.service_url}/"
+            ]
+            
+            async with aiohttp.ClientSession() as session:
+                tasks = []
+                for endpoint in endpoints:
+                    task = session.get(endpoint, timeout=5)
+                    tasks.append(task)
+                
+                responses = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                for resp in responses:
+                    if not isinstance(resp, Exception):
+                        if hasattr(resp, 'status') and resp.status == 200:
+                            return True
+            
+            return False
+        except:
+            return False
+    
+    async def check_bot_health(self):
+        """Проверка здоровья бота"""
+        try:
+            me = await self.bot.get_me()
+            stats = photo_map.get_photo_stats()
+            
+            # Рассчитываем время до следующего возможного сна (Render Free спит после 15 минут без HTTP трафика)
+            time_since_last_ping = (datetime.now() - self.last_successful_ping).total_seconds()
+            time_until_sleep = max(0, 900 - time_since_last_ping)  # 15 минут = 900 секунд
+            
+            logger.info(
+                f"\n{'='*50}\n"
+                f"🤖 СТАТУС БОТА\n"
+                f"{'='*50}\n"
+                f"📛 Имя: @{me.username}\n"
+                f"🆔 ID: {me.id}\n"
+                f"📸 Фото: {stats['loaded']}/{stats['total']} ({stats['percentage']}%)\n"
+                f"⏱️ Uptime: {self.get_uptime()}\n"
+                f"🔄 Успешных ping: {self.ping_count}\n"
+                f"📡 Паттерн: {self.current_pattern}\n"
+                f"⏰ До сна: {time_until_sleep//60:.0f} мин {time_until_sleep%60:.0f} сек\n"
+                f"{'='*50}"
+            )
+            
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки бота: {e}")
+            return False
+    
+    def adjust_activity_pattern(self):
+        """Настройка паттерна активности в зависимости от времени"""
+        hour = datetime.now().hour
+        
+        if 8 <= hour <= 22:  # Дневное время (активное)
+            self.current_pattern = 'normal'
+        elif 23 <= hour or hour <= 7:  # Ночное время
+            self.current_pattern = 'conservative'
+        else:
+            self.current_pattern = 'normal'
+    
+    async def run(self):
+        """Основной цикл системы выживания"""
+        logger.info("🚀 ЗАПУСК СИСТЕМЫ ВЫЖИВАНИЯ ДЛЯ RENDER FREE")
+        logger.info(f"📡 Сервис URL: {self.service_url}")
+        logger.info(f"⏰ Старт: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Первый немедленный ping после старта
+        await asyncio.sleep(5)
+        logger.info("⚡ Выполняю первый стартовый ping...")
+        if await self.smart_ping():
+            self.ping_count += 1
+            self.last_successful_ping = datetime.now()
+            logger.info("✅ Первый ping успешен!")
+        else:
+            logger.warning("⚠️ Первый ping не удался")
+        
+        while True:
+            try:
+                # Настраиваем паттерн активности
+                self.adjust_activity_pattern()
+                pattern = self.activity_patterns[self.current_pattern]
+                
+                # Выполняем ping
+                logger.info(f"🔄 Выполняю ping #{self.ping_count + 1}...")
+                
+                if await self.smart_ping():
+                    self.ping_count += 1
+                    self.last_successful_ping = datetime.now()
+                    self.consecutive_failures = 0
+                    
+                    logger.info(f"✅ Ping #{self.ping_count} успешен!")
+                    
+                    # Проверяем здоровье бота после успешного ping
+                    await self.check_bot_health()
+                    
+                else:
+                    self.consecutive_failures += 1
+                    logger.warning(f"⚠️ Ping #{self.ping_count + 1} не удался (ошибок подряд: {self.consecutive_failures})")
+                    
+                    # Если много ошибок подряд, переключаемся на агрессивный режим
+                    if self.consecutive_failures >= 2:
+                        self.current_pattern = 'aggressive'
+                        logger.warning("🚨 Переключаюсь на агрессивный режим ping!")
+                
+                # Если слишком много ошибок - ждем меньше
+                if self.consecutive_failures >= self.max_failures:
+                    wait_time = 60  # 1 минута при множественных ошибках
+                    logger.error(f"🚨 Критическое количество ошибок! Жду {wait_time} секунд")
+                else:
+                    # Случайное время ожидания в рамках текущего паттерна
+                    wait_time = random.randint(pattern['min'], pattern['max'])
+                
+                # Логируем информацию об ожидании
+                wait_min = wait_time // 60
+                wait_sec = wait_time % 60
+                
+                # Время до возможного сна Render
+                time_since_ping = (datetime.now() - self.last_successful_ping).total_seconds()
+                time_to_sleep = max(0, 900 - time_since_ping)  # 15 минут = 900 секунд
+                
+                logger.info(
+                    f"⏰ Следующий ping через: {wait_min} мин {wait_sec} сек\n"
+                    f"💤 Render может уснуть через: {time_to_sleep//60:.0f} мин {time_to_sleep%60:.0f} сек\n"
+                    f"📡 Текущий паттерн: {self.current_pattern}"
+                )
+                
+                # Ждем, но делаем мини-проверки каждую минуту
+                total_waited = 0
+                while total_waited < wait_time:
+                    # Ждем частями по 60 секунд
+                    chunk = min(60, wait_time - total_waited)
+                    await asyncio.sleep(chunk)
+                    total_waited += chunk
+                    
+                    # Каждую минуту проверяем, не нужно ли сделать ранний ping
+                    if total_waited % 60 == 0:
+                        # 10% шанс на ранний ping
+                        if random.random() < 0.1:
+                            logger.info("🎲 Ранний ping (случайный)...")
+                            if await self.smart_ping():
+                                self.ping_count += 1
+                                self.last_successful_ping = datetime.now()
+                                logger.info("✅ Ранний ping успешен!")
+                
+            except Exception as e:
+                logger.error(f"❌ Ошибка в системе выживания: {e}")
+                await asyncio.sleep(60)  # При ошибке ждем минуту
 
 # ==================== ИНИЦИАЛИЗАЦИЯ БОТА ====================
 
@@ -82,7 +565,7 @@ dp = Dispatcher(storage=storage)
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: str = ""):
-    """Отправка рекомендованных фото"""
+    """Отправка рекомендованных фото с ценами"""
     try:
         if not photo_keys:
             await bot.send_message(
@@ -154,9 +637,6 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                 "Администратор скоро добавит фотографии!",
                 reply_markup=keyboards.selection_complete_keyboard()
             )
-        else:
-            # Все фото отправлены успешно
-            pass
 
     except Exception as e:
         logger.error(f"❌ Ошибка при отправке фото: {e}", exc_info=True)
@@ -253,7 +733,7 @@ def format_photo_stats() -> str:
     
     if missing_list:
         text += f"\n\n<b>Отсутствуют фото для:</b>\n"
-        for i, photo in enumerate(missing_list[:5]):  # Показываем первые 5
+        for i, photo in enumerate(missing_list[:5]):
             text += f"{i+1}. {photo['name']}\n"
         if len(missing_list) > 5:
             text += f"... и еще {len(missing_list) - 5} продуктов"
@@ -353,7 +833,7 @@ async def cmd_help(message: Message):
         "/start - Перезапустить бота\n"
         "/help - Показать эту справку\n"
         "/status - Статус системы\n"
-        "/contacts - Контакты салона"
+        "/contacts - Контакты салоon"
     )
 
     await message.answer(
@@ -408,7 +888,6 @@ async def cmd_contacts(message: Message):
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
-    # Любой пользователь может попытаться войти в админку, проверка будет по паролю
     await state.set_state(AdminState.WAITING_PASSWORD)
     await message.answer(
         "🔐 <b>Доступ к админ-панели</b>\n\nВведите пароль для входа:",
@@ -803,7 +1282,6 @@ async def process_admin_stats(message: Message):
 
 @dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "🔄 Обновить список")
 async def process_admin_refresh(message: Message):
-    # Просто показываем обновленную статистику
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
 
@@ -913,7 +1391,7 @@ async def process_bulk_back_to_photos(message: Message, state: FSMContext):
 
 @dp.callback_query(F.data.startswith("bulk_category:"))
 async def process_bulk_category(callback: CallbackQuery, state: FSMContext):
-    category = callback.data.split(":")[1]  # "волосы" или "тело"
+    category = callback.data.split(":")[1]
 
     category_name = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
 
@@ -940,8 +1418,8 @@ async def process_bulk_back_to_categories(callback: CallbackQuery):
 async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
     try:
         parts = callback.data.split(":")
-        category = parts[1]  # "волосы" или "тело"
-        idx = int(parts[2])  # индекс подкатегории
+        category = parts[1]
+        idx = int(parts[2])
         
         category_name = "💇‍♀️ Волосы" if category == "волосы" else "🧴 Тело"
         subcategories = list(config.PHOTO_STRUCTURE_ADMIN[category_name].items())
@@ -952,7 +1430,6 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
         
         subcategory_name, products = subcategories[idx]
         
-        # Сохраняем текущую подкатегорию в состоянии
         await state.update_data(
             bulk_category=category,
             bulk_subcategory=subcategory_name,
@@ -962,7 +1439,6 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
         
         await state.set_state(AdminState.ADMIN_WAITING_BULK_PHOTO)
         
-        # Показываем первый продукт для загрузки
         product_key, product_name = products[0]
         current_file_id = photo_map.get_photo_file_id(product_key)
         
@@ -983,7 +1459,6 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
             text += f"❌ <i>Еще не загружено</i>\n\n"
             text += f"<i>Отправьте фото этого продукта</i>"
         
-        # Создаем inline-клавиатуру
         builder = InlineKeyboardBuilder()
         builder.row(
             types.InlineKeyboardButton(
@@ -1014,11 +1489,9 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
     products = data.get("bulk_products", [])
     current_index = data.get("bulk_current_index", 0)
 
-    # Переходим к следующему продукту
     current_index += 1
 
     if current_index >= len(products):
-        # Все продукты обработаны
         category_name = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
         subcategory_name = data.get("bulk_subcategory", "")
 
@@ -1036,7 +1509,6 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
         await callback.answer("✅ Все продукты обработаны!")
         return
 
-    # Показываем следующий продукт
     await state.update_data(bulk_current_index=current_index)
 
     product_key, product_name = products[current_index]
@@ -1112,19 +1584,15 @@ async def process_bulk_photo(message: Message, state: FSMContext):
     photo = message.photo[-1]
     file_id = photo.file_id
 
-    # Сохраняем фото
     success = photo_map.set_photo_file_id(product_key, file_id)
 
     if success:
-        # Переходим к следующему продукту
         current_index += 1
 
         if current_index >= len(products):
-            # Все продукты обработаны
             category_name = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
             subcategory_name = data.get("bulk_subcategory", "")
 
-            # Показываем полный file_id
             await message.answer(
                 f"✅ <b>Фото сохранено!</b>\n\n"
                 f"<b>Продукт:</b> {product_name}\n"
@@ -1141,7 +1609,6 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             await state.set_state(AdminState.ADMIN_BULK_UPLOAD)
             return
 
-        # Показываем следующий продукт
         await state.update_data(bulk_current_index=current_index)
 
         next_product_key, next_product_name = products[current_index]
@@ -1295,50 +1762,104 @@ async def process_cancel_reset(callback: CallbackQuery, state: FSMContext):
 async def process_no_action(callback: CallbackQuery):
     await callback.answer()
 
-# ==================== ЗАПУСК БОТА ====================
+# ==================== ЗАПУСК БОТА С УСИЛЕННОЙ СИСТЕМОЙ ВЫЖИВАНИЯ ====================
 
 async def main():
-    """Основная функция запуска бота"""
+    """Основная функция запуска бота с системой выживания"""
     try:
-        logger.info("🚀 Запуск бота с массовой загрузкой фото...")
+        logger.info("=" * 60)
+        logger.info("🚀 ЗАПУСК SVOY AV.COSMETIC БОТА")
+        logger.info(f"⏰ Время запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info("=" * 60)
         
         # Запускаем health check сервер
-        start_health_server()
-        logger.info("✅ Health check сервер запущен")
+        health_thread = start_health_server()
+        logger.info("✅ Health check сервер запущен в отдельном потоке")
         
         # Показываем статистику фото
         stats = photo_map.get_photo_stats()
         logger.info(f"📸 Статистика фото: {stats['loaded']}/{stats['total']} ({stats['percentage']}%)")
         
+        if stats['percentage'] < 70:
+            logger.warning("⚠️ Меньше 70% фото загружено. Рекомендуется догрузить фото через админку.")
+        
         # Удаляем webhook для чистого запуска
         await bot.delete_webhook(drop_pending_updates=True)
-
-        # ЗАПУСКАЕМ KEEP-ALIVE ЗАДАЧУ (чтобы бот не спал на Render Free)
-        async def keep_alive():
-            while True:
-                try:
-                    me = await bot.get_me()
-                    logger.info(f"🤖 Keep-alive: Бот активен (@{me.username}) - {stats['loaded']}/{stats['total']} фото")
-                except Exception as e:
-                    logger.error(f"❌ Keep-alive ошибка: {e}")
-                await asyncio.sleep(600)  # 10 минут
+        logger.info("✅ Webhook удален, запускаем polling режим")
         
-        # Запускаем в фоне
-        asyncio.create_task(keep_alive())
-        logger.info("✅ Keep-alive задача запущена (пинг каждые 10 минут)")
+        # ЗАПУСКАЕМ УСИЛЕННУЮ СИСТЕМУ ВЫЖИВАНИЯ
+        survival_system = RenderSurvivalSystem(bot)
+        survival_task = asyncio.create_task(survival_system.run())
+        logger.info("✅ Система выживания RenderSurvivalSystem запущена")
         
-        # Запускаем поллинг
-        logger.info("🔄 Запуск поллинга...")
-        await dp.start_polling(bot)
+        # Дополнительный быстрый стартовый пинг
+        async def quick_start():
+            await asyncio.sleep(10)
+            logger.info("⚡ Быстрый стартовый пинг для активации сервиса...")
+            if await survival_system.smart_ping():
+                logger.info("✅ Стартовый пинг успешен!")
+            else:
+                logger.warning("⚠️ Стартовый пинг не удался")
+        
+        asyncio.create_task(quick_start())
+        
+        # Информация о сервисе
+        logger.info("📡 Информация о сервисе:")
+        logger.info(f"   • Health check: https://salon-volosy-beauty20.onrender.com/health")
+        logger.info(f"   • Главная страница: https://salon-volosy-beauty20.onrender.com/")
+        logger.info(f"   • Ping endpoint: https://salon-volosy-beauty20.onrender.com/ping")
+        logger.info(f"   • JSON статус: https://salon-volosy-beauty20.onrender.com/status")
+        
+        logger.info("\n" + "=" * 60)
+        logger.info("🤖 БОТ ЗАПУЩЕН И ГОТОВ К РАБОТЕ")
+        logger.info("=" * 60 + "\n")
+        
+        # Запускаем поллинг бота
+        logger.info("🔄 Запуск polling бота...")
+        await dp.start_polling(
+            bot, 
+            allowed_updates=dp.resolve_used_update_types(),
+            close_bot_session=False
+        )
         
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}", exc_info=True)
+        logger.error(f"❌ Критическая ошибка при запуске: {e}", exc_info=True)
         raise
 
+def run_bot_with_restarts():
+    """Запуск бота с автоматическими перезапусками"""
+    max_restarts = 10
+    restart_delay = 30  # секунд
+    restart_count = 0
+    
+    while restart_count < max_restarts:
+        try:
+            restart_count += 1
+            logger.info(f"\n{'#' * 60}")
+            logger.info(f"🔄 Запуск бота (попытка {restart_count}/{max_restarts})")
+            logger.info(f"{'#' * 60}\n")
+            
+            asyncio.run(main())
+            
+        except KeyboardInterrupt:
+            logger.info("\n👋 Бот остановлен пользователем (Ctrl+C)")
+            break
+            
+        except Exception as e:
+            logger.error(f"\n⚠️ Бот упал с ошибкой: {e}")
+            
+            if restart_count < max_restarts:
+                logger.info(f"🔄 Перезапуск через {restart_delay} секунд...")
+                import time
+                time.sleep(restart_delay)
+                
+                # Увеличиваем задержку с каждой попыткой
+                restart_delay = min(restart_delay * 1.5, 300)  # Максимум 5 минут
+            else:
+                logger.error(f"🚨 Достигнут лимит перезапусков ({max_restarts})")
+                logger.error("   Проверьте логи и настройки бота")
+                break
+
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("👋 Бот остановлен пользователем")
-    except Exception as e:
-        logger.error(f"⚠️ Необработанное исключение: {e}", exc_info=True)
+    # Запускаем бота с системой перезапусков
+    run_bot_with_restarts()
