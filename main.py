@@ -1,5 +1,6 @@
 """
 MAIN.PY - Бот с массовой загрузкой фото через админ-панель
+Обновлено для работы на Render Free
 """
 
 import os
@@ -81,24 +82,24 @@ dp = Dispatcher(storage=storage)
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: str = ""):
-    """Отправка рекомендованных фото из статического хранилища"""
+    """Отправка рекомендованных фото"""
     try:
         if not photo_keys:
             await bot.send_message(
                 chat_id, 
-                "📷 Фото продуктов для этих рекомендаций пока не загружены.\n\n"
-                "Администратор скоро добавит фотографии!",
+                "📷 Фото продуктов пока не загружены.",
                 reply_markup=keyboards.selection_complete_keyboard()
             )
             return
 
         sent_count = 0
+        missing_products = []
+        
         for photo_key in photo_keys:
             file_id = photo_map.get_photo_file_id(photo_key)
             if file_id:
-                # Находим отображаемое имя и цену
+                # Находим отображаемое имя
                 display_name = photo_key
-                price = ""
                 
                 # Ищем отображаемое имя в структуре
                 for category_data in config.PHOTO_STRUCTURE_ADMIN.values():
@@ -111,10 +112,16 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                 # Получаем цену из конфига
                 price = config.PRODUCT_PRICES.get(photo_key, "")
                 
-                caption_text = f"{caption}\n<b>{display_name}</b>" if caption else f"<b>{display_name}</b>"
+                # Формируем подпись
+                if caption:
+                    caption_text = f"{caption}\n<b>{display_name}</b>"
+                else:
+                    caption_text = f"<b>{display_name}</b>"
+                
                 if price:
                     caption_text += f"\n💰 Цена: {price}"
                 
+                # Отправляем фото
                 await bot.send_photo(
                     chat_id=chat_id,
                     photo=file_id,
@@ -122,18 +129,37 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                     parse_mode=ParseMode.HTML
                 )
                 sent_count += 1
-                await asyncio.sleep(0.3)  # Небольшая задержка между фото
+                await asyncio.sleep(0.2)  # Небольшая задержка между фото
+            else:
+                # Запоминаем отсутствующие продукты
+                for category_data in config.PHOTO_STRUCTURE_ADMIN.values():
+                    for subcat_products in category_data.values():
+                        for key, name in subcat_products:
+                            if key == photo_key:
+                                missing_products.append(name)
+                                break
 
-        if sent_count == 0:
+        # Если не все фото загружены - показываем сообщение
+        if missing_products:
             await bot.send_message(
                 chat_id,
-                "📷 Фото продуктов временно недоступны.\n\n"
-                "Администратор еще не загрузил фотографии для этих продуктов.",
+                f"📷 <i>Примечание: отсутствуют фото для {len(missing_products)} продуктов.\n"
+                f"Администратор скоро добавит недостающие фотографии!</i>",
                 reply_markup=keyboards.selection_complete_keyboard()
             )
+        elif sent_count == 0:
+            await bot.send_message(
+                chat_id,
+                "📷 Фото продуктов пока не загружены.\n"
+                "Администратор скоро добавит фотографии!",
+                reply_markup=keyboards.selection_complete_keyboard()
+            )
+        else:
+            # Все фото отправлены успешно
+            pass
 
     except Exception as e:
-        logger.error(f"❌ Ошибка при отправке фото: {e}")
+        logger.error(f"❌ Ошибка при отправке фото: {e}", exc_info=True)
         await bot.send_message(
             chat_id,
             "❌ Произошла ошибка при отправке фото.",
@@ -221,6 +247,17 @@ def format_photo_stats() -> str:
     else:
         text += "✅ <i>Большинство фото загружено. Отличная работа!</i>"
 
+    # Показываем отсутствующие фото
+    missing_photos = photo_map.get_missing_photos()
+    missing_list = [p for p in missing_photos if p["status"] == "❌ Отсутствует"]
+    
+    if missing_list:
+        text += f"\n\n<b>Отсутствуют фото для:</b>\n"
+        for i, photo in enumerate(missing_list[:5]):  # Показываем первые 5
+            text += f"{i+1}. {photo['name']}\n"
+        if len(missing_list) > 5:
+            text += f"... и еще {len(missing_list) - 5} продуктов"
+
     return text
 
 def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -> str:
@@ -254,6 +291,12 @@ def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -
         text += f"   Ключ: <code>{photo['key']}</code>\n"
         if photo["file_id"]:
             text += f"   file_id: <code>{file_id_preview}</code>\n"
+        
+        # Добавляем цену если есть
+        price = config.PRODUCT_PRICES.get(photo['key'], "")
+        if price:
+            text += f"   💰 Цена: {price}\n"
+            
         text += "\n"
 
     stats = photo_map.get_photo_stats()
@@ -300,8 +343,9 @@ async def cmd_help(message: Message):
         "🧴 <b>Тело</b> — уход по потребностям кожи\n\n"
         "<b>Как работает подбор:</b>\n"
         "1. Выбираете категорию (волосы/тело)\n"
-        "2. Отвечаете на вопросы о типе/проблемах\nn"
-        "3. Получаете рекомендации и фото продуктов\n\n"
+        "2. Отвечаете на вопросы о типе/проблемах\n"
+        "3. Получаете рекомендации и фото продуктов\n"
+        "4. Видите цены под каждым фото\n\n"
         "<b>Навигация:</b>\n"
         "↩️ <b>Назад</b> — вернуться на предыдущий шаг\n"
         "🏠 <b>В главное меню</b> — вернуться в начало\n\n"
@@ -335,6 +379,8 @@ async def cmd_status(message: Message):
 
         if stats['percentage'] < 50:
             status_text += "⚠️ <i>Рекомендуется загрузить фото продуктов через админ-панель</i>"
+        else:
+            status_text += "✅ <i>Система готова к работе</i>"
 
         await message.answer(
             status_text,
@@ -386,7 +432,7 @@ async def process_admin_photos_to_main_menu(message: Message, state: FSMContext)
     await state.clear()
     
     await message.answer(
-        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категориа:</i>",
+        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
@@ -549,11 +595,13 @@ async def process_body_goal(message: Message, state: FSMContext):
 
         recommendations, photo_keys = await get_body_recommendations_with_photos(goal)
 
+        # Отправляем рекомендации
         await message.answer(
             recommendations,
             reply_markup=keyboards.selection_complete_keyboard()
         )
 
+        # Отправляем фото с ценами
         if photo_keys:
             await send_recommended_photos(
                 message.chat.id,
@@ -566,6 +614,7 @@ async def process_body_goal(message: Message, state: FSMContext):
                 reply_markup=keyboards.selection_complete_keyboard()
             )
 
+        # Отправляем контактную информацию
         await message.answer(
             config.SALES_POINTS + "\n\n" + config.DELIVERY_INFO,
             reply_markup=keyboards.selection_complete_keyboard()
@@ -575,7 +624,7 @@ async def process_body_goal(message: Message, state: FSMContext):
         logger.info(f"✅ Пользователь {message.from_user.id} получил рекомендации для тела: {goal}")
 
     except Exception as e:
-        logger.error(f"❌ Ошибка в process_body_goal: {e}")
+        logger.error(f"❌ Ошибка в process_body_goal: {e}", exc_info=True)
         await message.answer(
             "❌ Произошла ошибка. Попробуйте позже.",
             reply_markup=keyboards.selection_complete_keyboard()
@@ -677,11 +726,13 @@ async def show_hair_results(message: Message, state: FSMContext):
             hair_type, problems, scalp_type, hair_volume, hair_color
         )
 
+        # Отправляем рекомендации
         await message.answer(
             recommendations,
             reply_markup=keyboards.selection_complete_keyboard()
         )
 
+        # Отправляем фото с ценами
         if photo_keys:
             await send_recommended_photos(
                 message.chat.id,
@@ -694,6 +745,7 @@ async def show_hair_results(message: Message, state: FSMContext):
                 reply_markup=keyboards.selection_complete_keyboard()
             )
 
+        # Отправляем контактную информацию
         await message.answer(
             config.SALES_POINTS + "\n\n" + config.DELIVERY_INFO,
             reply_markup=keyboards.selection_complete_keyboard()
@@ -743,13 +795,6 @@ async def process_admin_photos_menu(message: Message, state: FSMContext):
 async def process_admin_stats(message: Message):
     stats = photo_map.get_photo_stats()
     stats_text = format_photo_stats()
-
-    missing_photos = [p for p in photo_map.get_missing_photos() if p["status"] == "❌ Отсутствует"]
-
-    if missing_photos:
-        stats_text += "\n\n<b>Самые важные отсутствующие фото:</b>\n"
-        for i, photo in enumerate(missing_photos[:5], 1):
-            stats_text += f"{i}. {photo['name']}\n"
 
     await message.answer(
         stats_text,
@@ -1079,12 +1124,12 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             category_name = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
             subcategory_name = data.get("bulk_subcategory", "")
 
-            # ИСПРАВЛЕНИЕ: показываем ПОЛНЫЙ file_id без сокращений
+            # Показываем полный file_id
             await message.answer(
                 f"✅ <b>Фото сохранено!</b>\n\n"
                 f"<b>Продукт:</b> {product_name}\n"
                 f"<b>Ключ:</b> <code>{product_key}</code>\n"
-                f"<b>file_id (полный):</b>\n<code>{file_id}</code>\n\n"
+                f"<b>file_id:</b> <code>{file_id}</code>\n\n"
                 f"📥 <b>Загрузка завершена!</b>\n\n"
                 f"<b>Категория:</b> {category_name}\n"
                 f"<b>Подкатегория:</b> {subcategory_name}\n"
@@ -1102,12 +1147,11 @@ async def process_bulk_photo(message: Message, state: FSMContext):
         next_product_key, next_product_name = products[current_index]
         next_file_id = photo_map.get_photo_file_id(next_product_key)
 
-        # ИСПРАВЛЕНИЕ: показываем ПОЛНЫЙ file_id сохраненного продукта
         text = (
             f"✅ <b>Фото сохранено!</b>\n\n"
             f"<b>Продукт:</b> {product_name}\n"
             f"<b>Ключ:</b> <code>{product_key}</code>\n"
-            f"<b>file_id (полный):</b>\n<code>{file_id}</code>\n\n"
+            f"<b>file_id:</b> <code>{file_id}</code>\n\n"
             f"📥 <b>Следующий продукт ({current_index + 1}/{len(products)}):</b>\n"
             f"• {next_product_name}\n"
             f"• Ключ: <code>{next_product_key}</code>\n\n"
@@ -1262,6 +1306,10 @@ async def main():
         start_health_server()
         logger.info("✅ Health check сервер запущен")
         
+        # Показываем статистику фото
+        stats = photo_map.get_photo_stats()
+        logger.info(f"📸 Статистика фото: {stats['loaded']}/{stats['total']} ({stats['percentage']}%)")
+        
         # Удаляем webhook для чистого запуска
         await bot.delete_webhook(drop_pending_updates=True)
 
@@ -1270,7 +1318,7 @@ async def main():
             while True:
                 try:
                     me = await bot.get_me()
-                    logger.info(f"🤖 Keep-alive: Бот активен (@{me.username})")
+                    logger.info(f"🤖 Keep-alive: Бот активен (@{me.username}) - {stats['loaded']}/{stats['total']} фото")
                 except Exception as e:
                     logger.error(f"❌ Keep-alive ошибка: {e}")
                 await asyncio.sleep(600)  # 10 минут
@@ -1280,6 +1328,7 @@ async def main():
         logger.info("✅ Keep-alive задача запущена (пинг каждые 10 минут)")
         
         # Запускаем поллинг
+        logger.info("🔄 Запуск поллинга...")
         await dp.start_polling(bot)
         
     except Exception as e:
