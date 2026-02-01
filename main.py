@@ -17,7 +17,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.utils.keyboard import InlineKeyboardBuilder  # ← ДОБАВЬТЕ ЭТОТ ИМПОРТ
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import config
 from states import UserState, AdminState
@@ -300,7 +300,7 @@ async def cmd_help(message: Message):
         "🧴 <b>Тело</b> — уход по потребностям кожи\n\n"
         "<b>Как работает подбор:</b>\n"
         "1. Выбираете категорию (волосы/тело)\n"
-        "2. Отвечаете на вопросы о типе/проблемах\n"
+        "2. Отвечаете на вопросы о типе/проблемах\nn"
         "3. Получаете рекомендации и фото продуктов\n\n"
         "<b>Навигация:</b>\n"
         "↩️ <b>Назад</b> — вернуться на предыдущий шаг\n"
@@ -386,7 +386,7 @@ async def process_admin_photos_to_main_menu(message: Message, state: FSMContext)
     await state.clear()
     
     await message.answer(
-        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категориа:</i>",
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
@@ -837,7 +837,7 @@ async def process_bulk_hair(message: Message):
 async def process_bulk_body(message: Message):
     await message.answer(
         "🧴 <b>Загрузка фото для ТЕЛА</b>\n\n"
-        "Выберите подкатегориу:",
+        "Выберите подкатегорию:",
         reply_markup=keyboards.admin_category_bulk_keyboard()
     )
 
@@ -938,8 +938,8 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
             text += f"❌ <i>Еще не загружено</i>\n\n"
             text += f"<i>Отправьте фото этого продукта</i>"
         
-        # Создаем inline-клавиатуру - используем InlineKeyboardBuilder из aiogram.utils.keyboard
-        builder = InlineKeyboardBuilder()  # ← ИСПРАВЛЕНО: убрано types.
+        # Создаем inline-клавиатуру
+        builder = InlineKeyboardBuilder()
         builder.row(
             types.InlineKeyboardButton(
                 text="⏭️ Пропустить",
@@ -1014,7 +1014,7 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
         text += f"❌ <i>Еще не загружено</i>\n\n"
         text += f"<i>Отправьте фото этого продукта</i>"
 
-    builder = InlineKeyboardBuilder()  # ← ИСПРАВЛЕНО
+    builder = InlineKeyboardBuilder()
     builder.row(
         types.InlineKeyboardButton(
             text="⏭️ Пропустить",
@@ -1079,11 +1079,12 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             category_name = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
             subcategory_name = data.get("bulk_subcategory", "")
 
+            # ИСПРАВЛЕНИЕ: показываем ПОЛНЫЙ file_id без сокращений
             await message.answer(
                 f"✅ <b>Фото сохранено!</b>\n\n"
                 f"<b>Продукт:</b> {product_name}\n"
                 f"<b>Ключ:</b> <code>{product_key}</code>\n"
-                f"<b>file_id:</b> <code>{file_id[:30]}...</code>\n\n"
+                f"<b>file_id (полный):</b>\n<code>{file_id}</code>\n\n"
                 f"📥 <b>Загрузка завершена!</b>\n\n"
                 f"<b>Категория:</b> {category_name}\n"
                 f"<b>Подкатегория:</b> {subcategory_name}\n"
@@ -1101,11 +1102,12 @@ async def process_bulk_photo(message: Message, state: FSMContext):
         next_product_key, next_product_name = products[current_index]
         next_file_id = photo_map.get_photo_file_id(next_product_key)
 
+        # ИСПРАВЛЕНИЕ: показываем ПОЛНЫЙ file_id сохраненного продукта
         text = (
             f"✅ <b>Фото сохранено!</b>\n\n"
             f"<b>Продукт:</b> {product_name}\n"
             f"<b>Ключ:</b> <code>{product_key}</code>\n"
-            f"<b>file_id:</b> <code>{file_id[:30]}...</code>\n\n"
+            f"<b>file_id (полный):</b>\n<code>{file_id}</code>\n\n"
             f"📥 <b>Следующий продукт ({current_index + 1}/{len(products)}):</b>\n"
             f"• {next_product_name}\n"
             f"• Ключ: <code>{next_product_key}</code>\n\n"
@@ -1119,7 +1121,7 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             text += f"❌ <i>Еще не загружено</i>\n\n"
             text += f"<i>Отправьте фото этого продукта</i>"
 
-        builder = InlineKeyboardBuilder()  # ← ИСПРАВЛЕНО
+        builder = InlineKeyboardBuilder()
         builder.row(
             types.InlineKeyboardButton(
                 text="⏭️ Пропустить",
