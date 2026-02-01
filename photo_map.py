@@ -1,6 +1,6 @@
 """
 PHOTO_MAP.PY - Статическое хранилище file_id фотографий
-Автоматическое обновление при загрузке через админ-панель
+Оптимизировано для Render Free (без зависимости от файловой системы)
 """
 
 import json
@@ -26,7 +26,7 @@ ALL_PHOTO_KEYS = {
     "hualuronic_acid": "Гиалуроновая кислота",
     "body_scrub": "Скраб для тела",
     "shower_gel": "Гель для душа",
-    "perfumed_soap": "Парфюмерное мыло",  # ← НОВОЕ, фото будет
+    "perfumed_soap": "Парфюмерное мыло",
     
     # Волосы (23 фото)
     # Для блондинок
@@ -35,7 +35,7 @@ ALL_PHOTO_KEYS = {
     "blonde_mask": "Маска для блондинок",
     
     # Для окрашенных волос
-    "colored_shampoo": "Шампунь для окрашенных волос",  # ← НОВОЕ, фото будет
+    "colored_shampoo": "Шампунь для окрашенных волос",
     "colored_conditioner": "Кондиционер для окрашенных",
     "colored_mask": "Маска для окрашенных",
     
@@ -43,9 +43,9 @@ ALL_PHOTO_KEYS = {
     "reconstruct_shampoo": "Шампунь реконстракт",
     "reconstruct_mask": "Маска реконстракт",
     
-    # Для тонких волос (НОВЫЕ)
-    "thin_hair_shampoo": "Шампунь для тонких волос",  # ← НОВОЕ, фото есть
-    "thin_hair_conditioner": "Кондиционер для тонких волос",  # ← НОВОЕ, фото есть
+    # Для тонких волос
+    "thin_hair_shampoo": "Шампунь для тонких волос",
+    "thin_hair_conditioner": "Кондиционер для тонких волос",
     
     # Спреи и кремы
     "dry_oil_spray": "Сухое масло спрей",
@@ -64,76 +64,74 @@ ALL_PHOTO_KEYS = {
     "mask_pink_powder": "Маска розовая пудра",
     "mask_mother_of_pearl": "Маска перламутр",
     
-    # Укрепляющая маска (НОВАЯ)
-    "strengthening_mask": "Укрепляющая маска для волос",  # ← НОВОЕ, фото есть
+    # Укрепляющая маска
+    "strengthening_mask": "Укрепляющая маска для волос",
     
     # Для мужчин
-    "men_shampoo": "Шампунь для мужчин",  # ← НОВОЕ, фото будет
+    "men_shampoo": "Шампунь для мужчин",
 }
+
+# ==================== ГЛОБАЛЬНОЕ ХРАНИЛИЩЕ В ПАМЯТИ ====================
+# На Render Free используем память вместо файлов
+_photo_storage = PRELOADED_PHOTOS.copy()
 
 # ==================== ЗАГРУЗКА И СОХРАНЕНИЕ ДАННЫХ ====================
 
 def load_photo_map() -> Dict[str, str]:
-    """Загрузить фото-мап из файла"""
+    """Загрузить фото-мап (для Render Free используем только память)"""
     try:
-        if os.path.exists(PHOTO_MAP_FILE):
-            with open(PHOTO_MAP_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        else:
-            # Если файла нет, инициализируем с предзагруженными фото
-            return PRELOADED_PHOTOS.copy()
+        print("📸 Загружаю предзагруженные фото из памяти...")
+        return _photo_storage.copy()
     except Exception as e:
-        print(f"⚠️ Ошибка загрузки фото-мапа: {e}")
+        print(f"⚠️ Ошибка загрузки фото: {e}")
         # Возвращаем предзагруженные фото в случае ошибки
         return PRELOADED_PHOTOS.copy()
 
 def save_photo_map(data: Dict[str, str]):
-    """Сохранить фото-мап в файл"""
+    """Сохранить фото-мап (на Render Free сохраняем только в памяти)"""
     try:
-        with open(PHOTO_MAP_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        global _photo_storage
+        _photo_storage = data.copy()
+        print(f"💾 Обновлено фото в памяти: {len(data)} записей")
         return True
     except Exception as e:
-        print(f"❌ Ошибка сохранения фото-мапа: {e}")
+        print(f"❌ Ошибка сохранения фото: {e}")
         return False
 
 # ==================== ОСНОВНЫЕ ФУНКЦИИ ====================
 
 def get_photo_file_id(product_key: str) -> str:
     """Получить file_id для product_key"""
-    data = load_photo_map()
-    return data.get(product_key, "")
+    return _photo_storage.get(product_key, "")
 
 def set_photo_file_id(product_key: str, file_id: str) -> bool:
-    """Установить file_id для product_key и сохранить в файл"""
+    """Установить file_id для product_key"""
     if product_key not in ALL_PHOTO_KEYS:
         print(f"⚠️ Неизвестный ключ: {product_key}")
         return False
     
-    data = load_photo_map()
-    data[product_key] = file_id
-    return save_photo_map(data)
+    _photo_storage[product_key] = file_id
+    print(f"✅ Сохранено фото для: {ALL_PHOTO_KEYS.get(product_key, product_key)}")
+    return True
 
 def get_all_photos() -> Dict[str, str]:
     """Получить все загруженные фотографии"""
-    return load_photo_map()
+    return _photo_storage.copy()
 
 def get_photos_by_keys(photo_keys: List[str]) -> List[str]:
     """Получить список file_id по списку ключей"""
-    data = load_photo_map()
     result = []
     for key in photo_keys:
-        if key in data and data[key]:
-            result.append(data[key])
+        if key in _photo_storage and _photo_storage[key]:
+            result.append(_photo_storage[key])
     return result
 
 def get_missing_photos() -> List[Dict[str, str]]:
     """Получить список отсутствующих фото"""
-    data = load_photo_map()
     missing = []
     
     for key, name in ALL_PHOTO_KEYS.items():
-        file_id = data.get(key, "")
+        file_id = _photo_storage.get(key, "")
         status = "✅ Загружено" if file_id else "❌ Отсутствует"
         missing.append({
             "key": key,
@@ -149,9 +147,8 @@ def get_missing_photos() -> List[Dict[str, str]]:
 
 def get_photo_stats() -> Dict[str, int]:
     """Получить статистику по фото"""
-    data = load_photo_map()
     total = len(ALL_PHOTO_KEYS)
-    loaded = sum(1 for key in ALL_PHOTO_KEYS if key in data and data[key])
+    loaded = sum(1 for key in ALL_PHOTO_KEYS if key in _photo_storage and _photo_storage[key])
     
     return {
         "total": total,
@@ -161,25 +158,34 @@ def get_photo_stats() -> Dict[str, int]:
     }
 
 def reset_all_photos() -> bool:
-    """Сбросить все фото (очистить файл и использовать предзагруженные)"""
+    """Сбросить все фото (очистить память и использовать предзагруженные)"""
     try:
-        if os.path.exists(PHOTO_MAP_FILE):
-            os.remove(PHOTO_MAP_FILE)
-        # При сбросе возвращаемся к предзагруженным фото
-        return save_photo_map(PRELOADED_PHOTOS.copy())
+        global _photo_storage
+        _photo_storage = PRELOADED_PHOTOS.copy()
+        print("🔄 Все фото сброшены до предзагруженных")
+        return True
     except Exception as e:
         print(f"❌ Ошибка сброса фото: {e}")
         return False
 
 def initialize_with_preloaded():
     """Инициализировать с предзагруженными фото"""
-    if PRELOADED_PHOTOS:
-        return save_photo_map(PRELOADED_PHOTOS.copy())
-    return save_photo_map({})
+    try:
+        global _photo_storage
+        _photo_storage = PRELOADED_PHOTOS.copy()
+        
+        # Статистика
+        loaded = sum(1 for v in PRELOADED_PHOTOS.values() if v)
+        total = len(PRELOADED_PHOTOS)
+        
+        print(f"📸 Инициализировано {loaded}/{total} предзагруженных фото")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка инициализации: {e}")
+        return False
 
-# Инициализируем файл при импорте
-if not os.path.exists(PHOTO_MAP_FILE) and PRELOADED_PHOTOS:
-    print("📸 Инициализация с предзагруженными фото...")
-    initialize_with_preloaded()
-elif not os.path.exists(PHOTO_MAP_FILE):
-    save_photo_map({})
+# Инициализируем при импорте
+print("🔄 Инициализация photo_map...")
+initialize_with_preloaded()
+stats = get_photo_stats()
+print(f"📊 Статистика: {stats['loaded']}/{stats['total']} фото ({stats['percentage']}%)")
