@@ -290,7 +290,7 @@ PRODUCT_PRICES = {
     "hydrophilic_oil": "700₽",
     "body_butter": "1000₽",
     "body_milk": "1000₽",
-    "hualuronic_acid": "700₽/1400₽",
+    "hualuronic_acid": "700₽ / 1400₽",
     "body_scrub": "700₽",
     "shower_gel": "800₽",
     "perfumed_soap": "600₽",
