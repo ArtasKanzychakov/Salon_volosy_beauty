@@ -29,8 +29,8 @@ def back_to_menu_keyboard() -> ReplyKeyboardMarkup:
 def selection_complete_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура после завершения подборки"""
     builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="💇‍♀️ Новая подборка волосЫ"))
-    builder.add(KeyboardButton(text="🧴 Новая подборка телО"))
+    builder.add(KeyboardButton(text="💇‍♀️ Новая подборка волосы"))
+    builder.add(KeyboardButton(text="🧴 Новая подборка тело"))
     builder.add(KeyboardButton(text="🏠 В главное меню"))
     builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
