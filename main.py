@@ -263,7 +263,7 @@ UPTIME: {self.get_uptime()}"""
             self.wfile.write(b'Internal Server Error')
     
     def get_uptime(self):
-        """Получить время работы в читаемом формате"""
+        """Получить время работы в читаемом формата"""
         try:
             # Примерное время - в реальном приложении нужно сохранять время старта
             return "Несколько часов"
@@ -517,7 +517,7 @@ class RenderSurvivalSystem:
                     wait_time = 60  # 1 минута при множественных ошибках
                     logger.error(f"🚨 Критическое количество ошибок! Жду {wait_time} секунд")
                 else:
-                    # Случайное время ожидания в рамках текущего паттерна
+                    # Случайное время ожидания в рамках текущего паттерн
                     wait_time = random.randint(pattern['min'], pattern['max'])
                 
                 # Логируем информацию об ожидании
@@ -576,7 +576,6 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
             return
 
         sent_count = 0
-        missing_products = []
         
         for photo_key in photo_keys:
             file_id = photo_map.get_photo_file_id(photo_key)
@@ -613,24 +612,8 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
                 )
                 sent_count += 1
                 await asyncio.sleep(0.2)  # Небольшая задержка между фото
-            else:
-                # Запоминаем отсутствующие продукты
-                for category_data in config.PHOTO_STRUCTURE_ADMIN.values():
-                    for subcat_products in category_data.values():
-                        for key, name in subcat_products:
-                            if key == photo_key:
-                                missing_products.append(name)
-                                break
 
-        # Если не все фото загружены - показываем сообщение
-        if missing_products:
-            await bot.send_message(
-                chat_id,
-                f"📷 <i>Примечание: отсутствуют фото для {len(missing_products)} продуктов.\n"
-                f"Администратор скоро добавит недостающие фотографии!</i>",
-                reply_markup=keyboards.selection_complete_keyboard()
-            )
-        elif sent_count == 0:
+        if sent_count == 0:
             await bot.send_message(
                 chat_id,
                 "📷 Фото продуктов пока не загружены.\n"
@@ -1024,7 +1007,7 @@ async def process_back(message: Message, state: FSMContext):
             reply_markup=keyboards.main_menu_keyboard()
         )
 
-@dp.message(F.text == "💇‍♀️ Новая подборка волос")
+@dp.message(F.text == "💇‍♀️ Новая подборка волосЫ")
 async def process_new_hair_selection(message: Message, state: FSMContext):
     await state.clear()
     clear_selected_problems(message.from_user.id)
@@ -1035,7 +1018,7 @@ async def process_new_hair_selection(message: Message, state: FSMContext):
         reply_markup=keyboards.hair_type_keyboard()
     )
 
-@dp.message(F.text == "🧴 Новая подборка тела")
+@dp.message(F.text == "🧴 Новая подборка телО")
 async def process_new_body_selection(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(UserState.BODY_CHOOSING_GOAL)
@@ -1702,7 +1685,7 @@ async def process_photos_list(callback: CallbackQuery):
 async def process_bulk_upload_start(callback: CallbackQuery):
     await callback.message.edit_text(
         "📥 <b>Массовая загрузка фото</b>\n\n"
-        "Выберите категорию для загрузки:",
+        "Выберите категорию для загрузку:",
         reply_markup=keyboards.admin_category_bulk_keyboard(),
         parse_mode=ParseMode.HTML
     )
@@ -1787,7 +1770,7 @@ async def main():
         await bot.delete_webhook(drop_pending_updates=True)
         logger.info("✅ Webhook удален, запускаем polling режим")
         
-        # ЗАПУСКАЕМ УСИЛЕННУЮ СИСТЕМУ ВЫЖИВАНИЯ
+        # ЗАПУСКАЕМ УСИЛЕННУЮ СИСТЕМЫ ВЫЖИВАНИЯ
         survival_system = RenderSurvivalSystem(bot)
         survival_task = asyncio.create_task(survival_system.run())
         logger.info("✅ Система выживания RenderSurvivalSystem запущена")
