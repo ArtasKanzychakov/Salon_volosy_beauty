@@ -50,7 +50,7 @@ PRELOADED_PHOTOS = {
     
     # Оттеночные маски
     "mask_cold_chocolate": "AgACAgIAAxkBAAIOQml_ORP1MDVoRCIhZyBO2qnA258YAALlDGsbsYL5SzvEG6sZk0gHAQADAgADeQADOAQ",
-    "mask_copper": "AgACAgIAAxkBAAIORGl_OSYAAdYQpVkuui-jogsTVGA7kAAC5gxrG7GC-Uts4UIZrHAH9MAEAAwIAA3kAAzgE",
+    "mask_copper": "AgACAgIAAxkBAAISFmmCHxJgmi274YO17IKpTZTz31lLAAJPEmsbWI3xS6E7_7rJcFgSAQADAgADeQADOAQ",
     
     # Для мужчин
     "men_shampoo": "",  # НЕТ ФОТО - ОСТАВЬТЕ ПУСТЫМ
