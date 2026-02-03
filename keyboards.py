@@ -29,8 +29,8 @@ def back_to_menu_keyboard() -> ReplyKeyboardMarkup:
 def selection_complete_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура после завершения подборки"""
     builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="💇‍♀️ Новая подборка волосы"))
-    builder.add(KeyboardButton(text="🧴 Новая подборка тело"))
+    builder.add(KeyboardButton(text="💇‍♀️ Новая подборка волос"))
+    builder.add(KeyboardButton(text="🧴 Новая подборка тела"))
     builder.add(KeyboardButton(text="🏠 В главное меню"))
     builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
@@ -271,13 +271,11 @@ def admin_back_to_photos_keyboard() -> ReplyKeyboardMarkup:
 def help_keyboard() -> ReplyKeyboardMarkup:
     """Клавиатура для помощи"""
     builder = ReplyKeyboardBuilder()
-    builder.add(KeyboardButton(text="💇‍♀️ Волосы"))
-    builder.add(KeyboardButton(text="🧴 Тело"))
+    builder.add(KeyboardButton(text="💇‍♀️ Новая подборка волос"))
+    builder.add(KeyboardButton(text="🧴 Новая подборка тела"))
     builder.add(KeyboardButton(text="📞 Контакты"))
-    builder.add(KeyboardButton(text="💇‍♀️ Новая подборка волосЫ"))
-    builder.add(KeyboardButton(text="🧴 Новая подборка телО"))
     builder.add(KeyboardButton(text="🏠 В главное меню"))
-    builder.adjust(2, 2, 2)
+    builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def contacts_keyboard() -> ReplyKeyboardMarkup:
