@@ -1007,7 +1007,7 @@ async def process_back(message: Message, state: FSMContext):
             reply_markup=keyboards.main_menu_keyboard()
         )
 
-@dp.message(F.text == "💇‍♀️ Новая подборка волосЫ")
+@dp.message(F.text == "💇‍♀️ Новая подборка волос")
 async def process_new_hair_selection(message: Message, state: FSMContext):
     await state.clear()
     clear_selected_problems(message.from_user.id)
@@ -1018,7 +1018,7 @@ async def process_new_hair_selection(message: Message, state: FSMContext):
         reply_markup=keyboards.hair_type_keyboard()
     )
 
-@dp.message(F.text == "🧴 Новая подборка телО")
+@dp.message(F.text == "🧴 Новая подборка тела")
 async def process_new_body_selection(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(UserState.BODY_CHOOSING_GOAL)
@@ -1232,7 +1232,7 @@ async def process_admin_password(message: Message, state: FSMContext):
     if message.text == config.ADMIN_PASSWORD:
         await state.set_state(AdminState.ADMIN_MAIN_MENU)
         await message.answer(
-            "✅ <b>Доступ разрешен!</b>\n\nДобро пожаловать в админ-панель.",
+            "✅ <b>Доступ разрешен!</b>\n\nДобро пожаловать в админ ​​панель.",
             reply_markup=keyboards.admin_main_keyboard()
         )
         logger.info(f"🔐 Пользователь {message.from_user.id} вошел в админ-панель")
