@@ -637,7 +637,8 @@ def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -
     text += f"Страница {page + 1} из {total_pages}\n\n"
 
     for i, photo in enumerate(current_photos, start=start_idx + 1):
-        file_id_preview = photo["file_id"][:20] + "..." if photo["file_id"] else "нет"
+        # ✅ ИСПРАВЛЕНО: полный file_id без обрезки [:20]
+        file_id_preview = photo["file_id"] if photo["file_id"] else "нет"
         text += f"{i}. {photo['status']} <b>{photo['name']}</b>\n"
         text += f"   Ключ: <code>{photo['key']}</code>\n"
         if photo["file_id"]:
@@ -1269,7 +1270,8 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
             f"• Ключ: <code>{product_key}</code>\n\n"
         )
         if current_file_id:
-            text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{current_file_id[:30]}...</code>\n\n"
+            # ✅ ИСПРАВЛЕНО: полный file_id без обрезки [:30]
+            text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{current_file_id}</code>\n\n"
             text += "<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
         else:
             text += "❌ <i>Еще не загружено</i>\n\n<i>Отправьте фото этого продукта</i>"
@@ -1324,7 +1326,8 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
         f"• Ключ: <code>{product_key}</code>\n\n"
     )
     if current_file_id:
-        text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{current_file_id[:30]}...</code>\n\n"
+        # ✅ ИСПРАВЛЕНО: полный file_id без обрезки [:30]
+        text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{current_file_id}</code>\n\n"
         text += "<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
     else:
         text += "❌ <i>Еще не загружено</i>\n\n<i>Отправьте фото этого продукта</i>"
@@ -1401,7 +1404,8 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             f"• Ключ: <code>{next_product_key}</code>\n\n"
         )
         if next_file_id:
-            text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{next_file_id[:30]}...</code>\n\n"
+            # ✅ ИСПРАВЛЕНО: полный file_id без обрезки [:30]
+            text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{next_file_id}</code>\n\n"
             text += "<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
         else:
             text += "❌ <i>Еще не загружено</i>\n\n<i>Отправьте фото этого продукта</i>"
