@@ -1,6 +1,6 @@
 """
 MAIN.PY - Бот с системой выживания для Render Free
-ИСПРАВЛЕНО: Полное отображение file_id в админ-панели
+ИСПРАВЛЕНО: Полное отображение file_id во всех категориях загрузки
 """
 
 import os
@@ -44,15 +44,15 @@ logger = logging.getLogger(__name__)
 
 class HealthHandler(BaseHTTPRequestHandler):
     """Улучшенный обработчик HTTP запросов для health check"""
-    
+
     def do_GET(self):
         try:
             client_ip = self.client_address[0]
             current_time = datetime.now().strftime('%H:%M:%S')
-            
+
             if not self.path.startswith('/favicon'):
                 logger.info(f"🌐 HTTP: {self.path} от {client_ip}")
-            
+
             if self.path == '/health':
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
@@ -60,7 +60,7 @@ class HealthHandler(BaseHTTPRequestHandler):
                 self.send_header('Pragma', 'no-cache')
                 self.send_header('Expires', '0')
                 self.end_headers()
-                
+
                 stats = photo_map.get_photo_stats()
                 response = f"""HTTP/1.1 200 OK
 Content-Type: text/plain
@@ -71,15 +71,15 @@ PHOTOS: {stats['loaded']}/{stats['total']} ({stats['percentage']}%)
 TIME: {current_time}
 SERVICE: salon-volosy-beauty
 UPTIME: {self.get_uptime()}"""
-                
+
                 self.wfile.write(response.encode('utf-8'))
-                
+
             elif self.path == '/':
                 self.send_response(200)
                 self.send_header('Content-type', 'text/html')
                 self.send_header('Cache-Control', 'no-cache')
                 self.end_headers()
-                
+
                 stats = photo_map.get_photo_stats()
                 html = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -214,20 +214,20 @@ UPTIME: {self.get_uptime()}"""
     </div>
 </body>
 </html>'''
-                
+
                 self.wfile.write(html.encode('utf-8'))
-                
+
             elif self.path.startswith('/ping'):
                 self.send_response(200)
                 self.send_header('Content-type', 'text/plain')
                 self.end_headers()
                 self.wfile.write(f'PONG {current_time}'.encode('utf-8'))
-                
+
             elif self.path == '/status':
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                
+
                 stats = photo_map.get_photo_stats()
                 status = {
                     "status": "active",
@@ -236,42 +236,43 @@ UPTIME: {self.get_uptime()}"""
                     "photos": stats,
                     "uptime": self.get_uptime(),
                 }
-                
+
                 import json
                 self.wfile.write(json.dumps(status, indent=2, ensure_ascii=False).encode('utf-8'))
-                
+
             else:
                 self.send_response(302)
                 self.send_header('Location', '/')
                 self.end_headers()
-                
+
         except Exception as e:
             logger.error(f"❌ HTTP Handler error: {e}")
             self.send_response(500)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
             self.wfile.write(b'Internal Server Error')
-    
+
     def get_uptime(self):
         try:
             return "Несколько часов"
         except:
             return "Активен"
-    
+
     def log_message(self, format, *args):
         pass
 
+
 def run_health_server():
     port = int(os.environ.get('PORT', 8080))
-    
+
     class SilentServer(HTTPServer):
         def service_actions(self):
             pass
-    
+
     server = SilentServer(('0.0.0.0', port), HealthHandler)
     server.timeout = 30
     server.request_queue_size = 10
-    
+
     logger.info(f"🌐 Health check сервер запущен на порту {port}")
     try:
         server.serve_forever()
@@ -280,51 +281,47 @@ def run_health_server():
     except Exception as e:
         logger.error(f"❌ Ошибка health check сервера: {e}")
 
+
 def start_health_server():
     health_thread = threading.Thread(target=run_health_server, daemon=True, name="HealthCheckThread")
     health_thread.start()
     logger.info("🔔 Health check система активирована")
     return health_thread
 
+
 # ==================== СИСТЕМА ВЫЖИВАНИЯ ДЛЯ RENDER FREE ====================
 
 class RenderSurvivalSystem:
     def __init__(self, bot_instance, service_url=None):
         self.bot = bot_instance
-        self.service_url = service_url or f"https://salon-volosy-beauty20.onrender.com"
+        self.service_url = service_url or "https://salon-volosy-beauty20.onrender.com"
         self.ping_count = 0
         self.start_time = datetime.now()
         self.last_successful_ping = datetime.now()
         self.consecutive_failures = 0
         self.max_failures = 3
-        
+
         self.activity_patterns = {
             'normal': {'min': 180, 'max': 360},
             'aggressive': {'min': 120, 'max': 240},
             'conservative': {'min': 240, 'max': 420}
         }
         self.current_pattern = 'normal'
-        
+
     def get_uptime(self):
         uptime = datetime.now() - self.start_time
         hours = uptime.seconds // 3600
         minutes = (uptime.seconds % 3600) // 60
         return f"{hours}ч {minutes}м"
-    
+
     async def smart_ping(self):
-        strategies = [
-            self._ping_direct,
-            self._ping_with_retry,
-            self._ping_multiple_endpoints
-        ]
-        
+        strategies = [self._ping_direct, self._ping_with_retry, self._ping_multiple_endpoints]
         for strategy in strategies:
             success = await strategy()
             if success:
                 return True
-        
         return False
-    
+
     async def _ping_direct(self):
         try:
             async with aiohttp.ClientSession() as session:
@@ -340,7 +337,7 @@ class RenderSurvivalSystem:
             return False
         except:
             return False
-    
+
     async def _ping_with_retry(self):
         for attempt in range(2):
             try:
@@ -350,7 +347,6 @@ class RenderSurvivalSystem:
                         f"{self.service_url}/ping",
                         f"{self.service_url}/"
                     ]
-                    
                     for endpoint in endpoints:
                         try:
                             async with session.get(endpoint, timeout=5) as resp:
@@ -358,13 +354,11 @@ class RenderSurvivalSystem:
                                     return True
                         except:
                             continue
-                    
                     await asyncio.sleep(2)
             except:
                 await asyncio.sleep(2)
-        
         return False
-    
+
     async def _ping_multiple_endpoints(self):
         try:
             endpoints = [
@@ -372,25 +366,21 @@ class RenderSurvivalSystem:
                 f"{self.service_url}/ping?t={datetime.now().timestamp()}",
                 f"{self.service_url}/"
             ]
-            
             async with aiohttp.ClientSession() as session:
                 tasks = [session.get(ep, timeout=5) for ep in endpoints]
                 responses = await asyncio.gather(*tasks, return_exceptions=True)
-                
                 for resp in responses:
                     if not isinstance(resp, Exception):
                         if hasattr(resp, 'status') and resp.status == 200:
                             return True
-            
             return False
         except:
             return False
-    
+
     async def check_bot_health(self):
         try:
             me = await self.bot.get_me()
             stats = photo_map.get_photo_stats()
-            
             logger.info(
                 f"\n{'='*50}\n"
                 f"🤖 СТАТУС БОТА\n"
@@ -402,34 +392,31 @@ class RenderSurvivalSystem:
                 f"🔄 Успешных ping: {self.ping_count}\n"
                 f"{'='*50}"
             )
-            
             return True
         except Exception as e:
             logger.error(f"❌ Ошибка проверки бота: {e}")
             return False
-    
+
     def adjust_activity_pattern(self):
         hour = datetime.now().hour
-        
         if 8 <= hour <= 22:
             self.current_pattern = 'normal'
         else:
             self.current_pattern = 'conservative'
-    
+
     async def run(self):
         logger.info("🚀 ЗАПУСК СИСТЕМЫ ВЫЖИВАНИЯ ДЛЯ RENDER FREE")
-        
         await asyncio.sleep(5)
         if await self.smart_ping():
             self.ping_count += 1
             self.last_successful_ping = datetime.now()
             logger.info("✅ Первый ping успешен!")
-        
+
         while True:
             try:
                 self.adjust_activity_pattern()
                 pattern = self.activity_patterns[self.current_pattern]
-                
+
                 if await self.smart_ping():
                     self.ping_count += 1
                     self.last_successful_ping = datetime.now()
@@ -441,12 +428,12 @@ class RenderSurvivalSystem:
                     logger.warning(f"⚠️ Ping не удался (ошибок подряд: {self.consecutive_failures})")
                     if self.consecutive_failures >= 2:
                         self.current_pattern = 'aggressive'
-                
+
                 if self.consecutive_failures >= self.max_failures:
                     wait_time = 60
                 else:
                     wait_time = random.randint(pattern['min'], pattern['max'])
-                
+
                 total_waited = 0
                 while total_waited < wait_time:
                     chunk = min(60, wait_time - total_waited)
@@ -456,16 +443,18 @@ class RenderSurvivalSystem:
                         if await self.smart_ping():
                             self.ping_count += 1
                             self.last_successful_ping = datetime.now()
-                
+
             except Exception as e:
                 logger.error(f"❌ Ошибка в системе выживания: {e}")
                 await asyncio.sleep(60)
+
 
 # ==================== ИНИЦИАЛИЗАЦИЯ БОТА ====================
 
 bot = Bot(token=config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
+
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
@@ -479,6 +468,7 @@ def deduplicate_ordered(keys: list) -> list:
             result.append(k)
     return result
 
+
 async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: str = ""):
     """
     Отправка рекомендованных фото.
@@ -488,7 +478,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
     try:
         if not photo_keys:
             await bot.send_message(
-                chat_id, 
+                chat_id,
                 "📷 Фото продуктов пока не загружены.",
                 reply_markup=keyboards.selection_complete_keyboard()
             )
@@ -536,6 +526,7 @@ async def send_recommended_photos(chat_id: int, photo_keys: List[str], caption: 
             reply_markup=keyboards.selection_complete_keyboard()
         )
 
+
 async def get_body_recommendations_with_photos(goal: str) -> tuple:
     """Получение рекомендаций для тела с фото"""
     try:
@@ -555,6 +546,7 @@ async def get_body_recommendations_with_photos(goal: str) -> tuple:
     except Exception as e:
         logger.error(f"❌ Ошибка получения рекомендаций для тела: {e}")
         return "Рекомендации временно недоступны.", []
+
 
 async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
                                                scalp_type: str, hair_volume: str,
@@ -606,6 +598,7 @@ async def get_hair_recommendations_with_photos(hair_type: str, problems: list,
         logger.error(f"❌ Ошибка получения рекомендаций для волос: {e}")
         return "Рекомендации временно недоступны.", []
 
+
 def format_photo_stats() -> str:
     """Форматирование статистики фото"""
     stats = photo_map.get_photo_stats()
@@ -626,7 +619,7 @@ def format_photo_stats() -> str:
 
     missing_photos = photo_map.get_missing_photos()
     missing_list = [p for p in missing_photos if p["status"] == "❌ Отсутствует"]
-    
+
     if missing_list:
         text += f"\n\n<b>Отсутствуют фото для:</b>\n"
         for i, photo in enumerate(missing_list[:5]):
@@ -636,8 +629,9 @@ def format_photo_stats() -> str:
 
     return text
 
+
 def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -> str:
-    """Форматирование списка фото для отображения (с ПОЛНЫМ file_id без обрезки)"""
+    """Форматирование списка фото для отображения"""
     per_page = config.ADMIN_PHOTOS_PER_PAGE
     start_idx = page * per_page
     end_idx = start_idx + per_page
@@ -662,18 +656,12 @@ def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -
     text += f"Страница {page + 1} из {total_pages}\n\n"
 
     for i, photo in enumerate(current_photos, start=start_idx + 1):
-        # ✅ ИСПРАВЛЕНО: показываем полный file_id, без обрезки
-        file_id_display = photo["file_id"] if photo["file_id"] else "нет"
-        
         text += f"{i}. {photo['status']} <b>{photo['name']}</b>\n"
         text += f"   Ключ: <code>{photo['key']}</code>\n"
-        
         if photo["file_id"]:
-            # Для длинных file_id используем перенос строки, чтобы не обрезать
-            if len(photo["file_id"]) > 50:
-                text += f"   file_id: <code>{photo['file_id']}</code>\n"
-            else:
-                text += f"   file_id: <code>{photo['file_id']}</code>\n"
+            text += f"   file_id: <code>{photo['file_id']}</code>\n"
+        else:
+            text += f"   file_id: <i>отсутствует</i>\n"
 
         price = config.PRODUCT_PRICES.get(photo['key'], "")
         if price:
@@ -685,6 +673,7 @@ def format_photo_list(photos: List[Dict], page: int, filter_type: str = "all") -
     text += f"\n📈 <b>Итого:</b> {stats['loaded']}/{stats['total']} ({stats['percentage']}%)"
 
     return text
+
 
 # ==================== КОМАНДЫ БОТА ====================
 
@@ -713,6 +702,7 @@ async def cmd_start(message: Message, state: FSMContext):
             reply_markup=keyboards.main_menu_keyboard()
         )
 
+
 @dp.message(Command("help"))
 async def cmd_help(message: Message):
     help_text = (
@@ -735,6 +725,7 @@ async def cmd_help(message: Message):
         "/contacts - Контакты"
     )
     await message.answer(help_text, reply_markup=keyboards.help_keyboard())
+
 
 @dp.message(Command("status"))
 async def cmd_status(message: Message):
@@ -761,6 +752,7 @@ async def cmd_status(message: Message):
         logger.error(f"❌ Ошибка в cmd_status: {e}")
         await message.answer("❌ Ошибка при получении статуса")
 
+
 @dp.message(Command("contacts"))
 async def cmd_contacts(message: Message):
     contacts_text = (
@@ -772,6 +764,7 @@ async def cmd_contacts(message: Message):
     )
     await message.answer(contacts_text, reply_markup=keyboards.contacts_keyboard())
 
+
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message, state: FSMContext):
     await state.set_state(AdminState.WAITING_PASSWORD)
@@ -779,6 +772,7 @@ async def cmd_admin(message: Message, state: FSMContext):
         "🔐 <b>Доступ к админ-панели</b>\n\nВведите пароль для входа:",
         reply_markup=keyboards.back_to_menu_keyboard()
     )
+
 
 # ==================== ВЫХОД ИЗ АДМИНКИ ====================
 
@@ -791,6 +785,7 @@ async def process_admin_to_main_menu(message: Message, state: FSMContext):
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
 
+
 @dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "🏠 В главное меню")
 async def process_admin_photos_to_main_menu(message: Message, state: FSMContext):
     await state.clear()
@@ -799,6 +794,7 @@ async def process_admin_photos_to_main_menu(message: Message, state: FSMContext)
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
+
 
 @dp.message(AdminState.ADMIN_BULK_UPLOAD, F.text == "🏠 В главное меню")
 async def process_admin_bulk_to_main_menu(message: Message, state: FSMContext):
@@ -809,23 +805,28 @@ async def process_admin_bulk_to_main_menu(message: Message, state: FSMContext):
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
 
+
 # ==================== НАВИГАЦИОННЫЕ КНОПКИ ====================
 
 @dp.message(F.text == "❓ Помощь")
 async def process_help(message: Message):
     await cmd_help(message)
 
+
 @dp.message(F.text == "📞 Контакты")
 async def process_contacts(message: Message):
     await cmd_contacts(message)
+
 
 @dp.message(F.text == "📍 Точки продаж")
 async def process_sales_points(message: Message):
     await message.answer(config.SALES_POINTS, reply_markup=keyboards.contacts_keyboard())
 
+
 @dp.message(F.text == "🚚 Доставка")
 async def process_delivery(message: Message):
     await message.answer(config.DELIVERY_INFO, reply_markup=keyboards.contacts_keyboard())
+
 
 @dp.message(F.text == "💬 Написать менеджеру")
 async def process_manager(message: Message):
@@ -837,6 +838,7 @@ async def process_manager(message: Message):
         reply_markup=keyboards.contacts_keyboard()
     )
 
+
 @dp.message(F.text == "🏠 В главное меню")
 async def process_main_menu(message: Message, state: FSMContext):
     await state.clear()
@@ -846,6 +848,7 @@ async def process_main_menu(message: Message, state: FSMContext):
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
+
 
 @dp.message(F.text == "↩️ Назад")
 async def process_back(message: Message, state: FSMContext):
@@ -897,6 +900,7 @@ async def process_back(message: Message, state: FSMContext):
             reply_markup=keyboards.main_menu_keyboard()
         )
 
+
 @dp.message(F.text == "💇‍♀️ Новая подборка волос")
 async def process_new_hair_selection(message: Message, state: FSMContext):
     await state.clear()
@@ -907,6 +911,7 @@ async def process_new_hair_selection(message: Message, state: FSMContext):
         reply_markup=keyboards.hair_type_keyboard()
     )
 
+
 @dp.message(F.text == "🧴 Новая подборка тела")
 async def process_new_body_selection(message: Message, state: FSMContext):
     await state.clear()
@@ -915,6 +920,7 @@ async def process_new_body_selection(message: Message, state: FSMContext):
         "🧴 <b>Прекрасно! Займемся уходом за телом.</b>\n\n<i>Какова ваша основная цель ухода?</i>",
         reply_markup=keyboards.body_goals_keyboard()
     )
+
 
 # ==================== ОСНОВНАЯ ЛОГИКА БОТА ====================
 
@@ -927,6 +933,7 @@ async def process_hair_category(message: Message, state: FSMContext):
         reply_markup=keyboards.hair_type_keyboard()
     )
 
+
 @dp.message(UserState.CHOOSING_CATEGORY, F.text == "🧴 Тело")
 async def process_body_category(message: Message, state: FSMContext):
     await state.set_state(UserState.BODY_CHOOSING_GOAL)
@@ -934,6 +941,7 @@ async def process_body_category(message: Message, state: FSMContext):
         "🧴 <b>Прекрасно! Займемся уходом за телом.</b>\n\n<i>Какова ваша основная цель ухода?</i>",
         reply_markup=keyboards.body_goals_keyboard()
     )
+
 
 # ==================== ОПРОС ДЛЯ ТЕЛА ====================
 
@@ -971,6 +979,7 @@ async def process_body_goal(message: Message, state: FSMContext):
         )
         await state.clear()
 
+
 # ==================== ОПРОС ДЛЯ ВОЛОС ====================
 
 @dp.message(UserState.HAIR_CHOOSING_TYPE, F.text.in_(config.HAIR_TYPES))
@@ -986,6 +995,7 @@ async def process_hair_type(message: Message, state: FSMContext):
         "<i>Можно нажать '✅ Готово' без выбора проблем</i>",
         reply_markup=keyboards.hair_problems_keyboard([])
     )
+
 
 @dp.message(UserState.HAIR_CHOOSING_PROBLEMS)
 async def process_hair_problems(message: Message, state: FSMContext):
@@ -1019,6 +1029,7 @@ async def process_hair_problems(message: Message, state: FSMContext):
             reply_markup=keyboards.hair_problems_keyboard(get_selected_problems(message.from_user.id))
         )
 
+
 @dp.message(UserState.HAIR_CHOOSING_SCALP, F.text.in_(config.SCALP_TYPES))
 async def process_scalp_type(message: Message, state: FSMContext):
     scalp_type = message.text
@@ -1029,6 +1040,7 @@ async def process_scalp_type(message: Message, state: FSMContext):
         "<i>Хотите добавить объем волосам?</i>",
         reply_markup=keyboards.hair_volume_keyboard()
     )
+
 
 @dp.message(UserState.HAIR_CHOOSING_VOLUME, F.text.in_(config.HAIR_VOLUME))
 async def process_hair_volume(message: Message, state: FSMContext):
@@ -1046,11 +1058,13 @@ async def process_hair_volume(message: Message, state: FSMContext):
     else:
         await show_hair_results(message, state)
 
+
 @dp.message(UserState.HAIR_CHOOSING_COLOR, F.text.in_(["Брюнетка", "Шатенка", "Русая", "Рыжая"]))
 async def process_hair_color(message: Message, state: FSMContext):
     hair_color = message.text
     save_user_data(message.from_user.id, "hair_color", hair_color)
     await show_hair_results(message, state)
+
 
 async def show_hair_results(message: Message, state: FSMContext):
     try:
@@ -1091,6 +1105,7 @@ async def show_hair_results(message: Message, state: FSMContext):
         )
         await state.clear()
 
+
 # ==================== АДМИН-ПАНЕЛЬ ====================
 
 @dp.message(AdminState.WAITING_PASSWORD)
@@ -1105,6 +1120,7 @@ async def process_admin_password(message: Message, state: FSMContext):
     else:
         await message.answer("❌ Неверный пароль. Попробуйте еще раз.")
 
+
 @dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📸 Управление фото")
 async def process_admin_photos_menu(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
@@ -1115,9 +1131,11 @@ async def process_admin_photos_menu(message: Message, state: FSMContext):
         reply_markup=keyboards.admin_photos_keyboard()
     )
 
+
 @dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "📊 Статистика")
 async def process_admin_stats(message: Message):
     await message.answer(format_photo_stats(), reply_markup=keyboards.admin_main_keyboard())
+
 
 @dp.message(AdminState.ADMIN_MAIN_MENU, F.text == "🔄 Обновить список")
 async def process_admin_refresh(message: Message):
@@ -1125,6 +1143,7 @@ async def process_admin_refresh(message: Message):
         f"🔄 <b>Список обновлен</b>\n\n{format_photo_stats()}",
         reply_markup=keyboards.admin_main_keyboard()
     )
+
 
 @dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "📋 Список всех фото")
 async def process_admin_photos_list(message: Message):
@@ -1134,6 +1153,7 @@ async def process_admin_photos_list(message: Message):
         reply_markup=keyboards.admin_photos_list_keyboard(0, "all"),
         parse_mode=ParseMode.HTML
     )
+
 
 @dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "📥 Массовая загрузка")
 async def process_admin_bulk_upload(message: Message, state: FSMContext):
@@ -1152,6 +1172,7 @@ async def process_admin_bulk_upload(message: Message, state: FSMContext):
         reply_markup=keyboards.admin_bulk_upload_keyboard()
     )
 
+
 @dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "❌ Удалить все фото")
 async def process_admin_reset_photos(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_CONFIRM_RESET)
@@ -1167,10 +1188,12 @@ async def process_admin_reset_photos(message: Message, state: FSMContext):
         reply_markup=keyboards.admin_confirm_reset_keyboard()
     )
 
+
 @dp.message(AdminState.ADMIN_PHOTOS_MENU, F.text == "↩️ Назад в админку")
 async def process_admin_back_to_main(message: Message, state: FSMContext):
     await state.set_state(AdminState.ADMIN_MAIN_MENU)
     await message.answer("Главное меню админки:", reply_markup=keyboards.admin_main_keyboard())
+
 
 @dp.message(AdminState.ADMIN_BULK_UPLOAD, F.text == "💇‍♀️ Загрузить ВОЛОСЫ")
 async def process_bulk_hair(message: Message):
@@ -1179,6 +1202,7 @@ async def process_bulk_hair(message: Message):
         reply_markup=keyboards.admin_category_bulk_keyboard()
     )
 
+
 @dp.message(AdminState.ADMIN_BULK_UPLOAD, F.text == "🧴 Загрузить ТЕЛО")
 async def process_bulk_body(message: Message):
     await message.answer(
@@ -1186,12 +1210,14 @@ async def process_bulk_body(message: Message):
         reply_markup=keyboards.admin_category_bulk_keyboard()
     )
 
+
 @dp.message(AdminState.ADMIN_BULK_UPLOAD, F.text == "📋 Показать прогресс")
 async def process_bulk_progress(message: Message):
     await message.answer(
         f"📋 <b>Прогресс загрузки</b>\n\n{format_photo_stats()}",
         reply_markup=keyboards.admin_bulk_upload_keyboard()
     )
+
 
 @dp.message(AdminState.ADMIN_BULK_UPLOAD, F.text == "↩️ Назад к фото")
 async def process_bulk_back_to_photos(message: Message, state: FSMContext):
@@ -1201,6 +1227,7 @@ async def process_bulk_back_to_photos(message: Message, state: FSMContext):
         "Выберите действие:",
         reply_markup=keyboards.admin_photos_keyboard()
     )
+
 
 # ==================== CALLBACK QUERIES ДЛЯ АДМИНКИ ====================
 
@@ -1215,6 +1242,7 @@ async def process_bulk_category(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+
 @dp.callback_query(F.data == "bulk_back_to_categories")
 async def process_bulk_back_to_categories(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -1223,6 +1251,7 @@ async def process_bulk_back_to_categories(callback: CallbackQuery):
         parse_mode=ParseMode.HTML
     )
     await callback.answer()
+
 
 @dp.callback_query(F.data.startswith("bulk_subcategory_idx:"))
 async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
@@ -1260,7 +1289,6 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
             f"• Ключ: <code>{product_key}</code>\n\n"
         )
         if current_file_id:
-            # ✅ ИСПРАВЛЕНО: показываем полный file_id, без обрезки
             text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{current_file_id}</code>\n\n"
             text += "<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
         else:
@@ -1278,6 +1306,7 @@ async def process_bulk_subcategory(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"❌ Ошибка в process_bulk_subcategory: {e}")
         await callback.answer("❌ Произошла ошибка")
+
 
 @dp.callback_query(F.data.startswith("bulk_skip:"))
 async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
@@ -1315,7 +1344,6 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
         f"• Ключ: <code>{product_key}</code>\n\n"
     )
     if current_file_id:
-        # ✅ ИСПРАВЛЕНО: показываем полный file_id, без обрезки
         text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{current_file_id}</code>\n\n"
         text += "<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
     else:
@@ -1328,6 +1356,7 @@ async def process_bulk_skip(callback: CallbackQuery, state: FSMContext):
     )
     await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode=ParseMode.HTML)
     await callback.answer("⏭️ Пропущено")
+
 
 @dp.callback_query(F.data == "bulk_stop")
 async def process_bulk_stop(callback: CallbackQuery, state: FSMContext):
@@ -1342,6 +1371,7 @@ async def process_bulk_stop(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(AdminState.ADMIN_BULK_UPLOAD)
     await callback.answer("🛑 Загрузка остановлена")
+
 
 @dp.message(AdminState.ADMIN_WAITING_BULK_PHOTO, F.photo)
 async def process_bulk_photo(message: Message, state: FSMContext):
@@ -1359,14 +1389,20 @@ async def process_bulk_photo(message: Message, state: FSMContext):
     success = photo_map.set_photo_file_id(product_key, file_id)
 
     if success:
+        # Отправляем отдельное сообщение с полной информацией о сохраненном фото
+        await message.answer(
+            f"✅ <b>Фото сохранено!</b>\n\n"
+            f"<b>Продукт:</b> {product_name}\n"
+            f"<b>Ключ:</b> <code>{product_key}</code>\n"
+            f"<b>file_id:</b> <code>{file_id}</code>",
+            parse_mode=ParseMode.HTML
+        )
+
         current_index += 1
 
         if current_index >= len(products):
             category_name = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
             await message.answer(
-                f"✅ <b>Фото сохранено!</b>\n\n"
-                f"<b>Продукт:</b> {product_name}\n"
-                f"<b>Ключ:</b> <code>{product_key}</code>\n\n"
                 f"📥 <b>Загрузка завершена!</b>\n\n"
                 f"<b>Категория:</b> {category_name}\n"
                 f"<b>Подкатегория:</b> {data.get('bulk_subcategory', '')}\n"
@@ -1383,15 +1419,13 @@ async def process_bulk_photo(message: Message, state: FSMContext):
         category_label = "💇‍♀️ Волосы" if data.get("bulk_category") == "волосы" else "🧴 Тело"
 
         text = (
-            f"✅ <b>Фото сохранено!</b>\n\n"
-            f"<b>Продукт:</b> {product_name}\n"
-            f"<b>Ключ:</b> <code>{product_key}</code>\n\n"
-            f"📥 <b>Следующий продукт ({current_index + 1}/{len(products)}):</b>\n"
-            f"• {next_product_name}\n"
-            f"• Ключ: <code>{next_product_key}</code>\n\n"
+            f"📥 <b>Следующий продукт ({current_index + 1}/{len(products)}):</b>\n\n"
+            f"<b>Категория:</b> {category_label}\n"
+            f"<b>Подкатегория:</b> {data.get('bulk_subcategory', '')}\n\n"
+            f"<b>Продукт:</b> {next_product_name}\n"
+            f"<b>Ключ:</b> <code>{next_product_key}</code>\n\n"
         )
         if next_file_id:
-            # ✅ ИСПРАВЛЕНО: показываем полный file_id, без обрезки
             text += f"✅ <i>Уже загружено</i>\n• file_id: <code>{next_file_id}</code>\n\n"
             text += "<i>Отправьте новое фото для замены или нажмите 'Пропустить'</i>"
         else:
@@ -1410,6 +1444,7 @@ async def process_bulk_photo(message: Message, state: FSMContext):
             f"Ключ: <code>{product_key}</code>",
             parse_mode=ParseMode.HTML
         )
+
 
 @dp.message(AdminState.ADMIN_WAITING_BULK_PHOTO)
 async def handle_bulk_state_text(message: Message, state: FSMContext):
@@ -1432,6 +1467,7 @@ async def handle_bulk_state_text(message: Message, state: FSMContext):
             parse_mode=ParseMode.HTML
         )
 
+
 @dp.callback_query(F.data.startswith("photos_list:"))
 async def process_photos_list(callback: CallbackQuery):
     parts = callback.data.split(":")
@@ -1445,6 +1481,7 @@ async def process_photos_list(callback: CallbackQuery):
     )
     await callback.answer()
 
+
 @dp.callback_query(F.data == "bulk_upload_start")
 async def process_bulk_upload_start(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -1454,11 +1491,13 @@ async def process_bulk_upload_start(callback: CallbackQuery):
     )
     await callback.answer()
 
+
 @dp.callback_query(F.data == "admin_back_to_main")
 async def process_admin_back_to_main_callback(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminState.ADMIN_MAIN_MENU)
     await callback.message.edit_text("Главное меню админки:", reply_markup=keyboards.admin_main_keyboard())
     await callback.answer()
+
 
 @dp.callback_query(F.data == "confirm_reset_photos")
 async def process_confirm_reset(callback: CallbackQuery, state: FSMContext):
@@ -1478,6 +1517,7 @@ async def process_confirm_reset(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
     await callback.answer()
 
+
 @dp.callback_query(F.data == "cancel_reset_photos")
 async def process_cancel_reset(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminState.ADMIN_PHOTOS_MENU)
@@ -1489,9 +1529,11 @@ async def process_cancel_reset(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer("❌ Удаление отменено")
 
+
 @dp.callback_query(F.data == "no_action")
 async def process_no_action(callback: CallbackQuery):
     await callback.answer()
+
 
 # ==================== ЗАПУСК БОТА ====================
 
@@ -1524,6 +1566,7 @@ async def main():
         logger.error(f"❌ Критическая ошибка при запуске: {e}", exc_info=True)
         raise
 
+
 def run_bot_with_restarts():
     max_restarts = 10
     restart_delay = 30
@@ -1549,6 +1592,7 @@ def run_bot_with_restarts():
             else:
                 logger.error("🚨 Достигнут лимит перезапусков")
                 break
+
 
 if __name__ == "__main__":
     run_bot_with_restarts()
