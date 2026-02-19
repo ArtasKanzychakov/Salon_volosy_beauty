@@ -1,6 +1,7 @@
 """
 PRELOADED_PHOTOS.PY - Предзагруженные фото для бота
 Используется для быстрой инициализации системы без загрузки фото через админку
+ОБНОВЛЕНО: Добавлены file_id для 5 продуктов
 """
 
 PRELOADED_PHOTOS = {
@@ -12,7 +13,7 @@ PRELOADED_PHOTOS = {
     "hualuronic_acid":   "AgACAgIAAxkBAAIOFml_NnGtDhN-dDTHJc04sSvb-t9BAAK7DGsbsYL5S9GM-PCklmdyAQADAgADeQADOAQ",
     "body_scrub":        "AgACAgIAAxkBAAIOGGl_NoRfPhckj9Y_FkOJdEPhKUyYAAK8DGsbsYL5Sx_bxSO-jWuPAQADAgADeQADOAQ",
     "shower_gel":        "AgACAgIAAxkBAAIOGml_NpsncG784BDQ-jzy8BaCx43HAAK-DGsbsYL5S9RSnAJRcCAEAQADAgADeQADOAQ",
-    "perfumed_soap":     "",   # ❌ НЕТ ФОТО — нужно: perfumed_soap.jpg
+    "perfumed_soap":     "AgACAgIAAxkBAAIT1WmXLlhkbDuzF_8e1CmwoZXpx2-xAAIhF2sbOVe5SI14pDOu1g6HAQADAgADeQADOgQ",  # ✅ ДОБАВЛЕНО
 
     # ── ВОЛОСЫ — блондинки ─────────────────────────────────────────────────
     "blonde_shampoo":       "AgACAgIAAxkBAAIOHGl_NrvpGa81qA2k_K9QHYGVohW6AALADGsbsYL5S7c9GM0nQ6isAQADAgADeQADOAQ",
@@ -23,14 +24,14 @@ PRELOADED_PHOTOS = {
     "mask_mother_of_pearl": "AgACAgIAAxkBAAIOJml_NzEresSOHklKJd6CShczRg0AA8YMaxuxgvlLsfMuQto5m7cBAAMCAAN5AAM4BA",
 
     # ── ВОЛОСЫ — окрашенные ────────────────────────────────────────────────
-    "colored_shampoo":      "",   # ❌ НЕТ ФОТО — нужно: colored_shampoo.jpg
+    "colored_shampoo":      "AgACAgIAAxkBAAITTWmXH2ieIPGFY4bbfckAAQLBnO331wACqBZrGzlXuUgWp3mHxsSvwwEAAwIAA3kAAzoE",  # ✅ ДОБАВЛЕНО
     "colored_conditioner":  "AgACAgIAAxkBAAIOKGl_N2IMWBIw25WqP96rBrasELoaAALJDGsbsYL5Sy8We9GZpgqbAQADAgADeQADOAQ",
     "colored_mask":         "AgACAgIAAxkBAAIOKml_N3dC3l2mH5M5xUdWYFlI6yE_AALNDGsbsYL5S_IxV81TFN6lAQADAgADeQADOAQ",
 
     # ── ВОЛОСЫ — натуральные (новые ключи) ────────────────────────────────
-    "natural_shampoo":      "",   # ❌ НЕТ ФОТО — нужно: natural_shampoo.jpg
+    "natural_shampoo":      "AgACAgIAAxkBAAITpmmXJ4QymIWNkeGrgTwk9S9Y-GL6AALlFmsbOVe5SPoFxKEYWOFGAQADAgADeQADOgQ",  # ✅ ДОБАВЛЕНО
     "natural_conditioner":  "",   # ❌ НЕТ ФОТО — нужно: natural_conditioner.jpg
-    "strengthening_spray":  "",   # ❌ НЕТ ФОТО — нужно: strengthening_spray.jpg
+    "strengthening_spray":  "AgACAgIAAxkBAAIT82mXNI8q7RtdPqM-kF45dRG3loZ2AAIvEGsbOVfBSGzej3d1jNSHAQADAgADeQADOgQ",  # ✅ ДОБАВЛЕНО
 
     # ── ВОЛОСЫ — тонкие ───────────────────────────────────────────────────
     "thin_hair_shampoo":     "AgACAgIAAxkBAAIOLGl_N7g5ZF_UiDcmpRMAAZ86tjoluAACzgxrG7GC-Uv1mUxDf-Ji5QEAAwIAA3cAAzgE",
@@ -62,7 +63,7 @@ PRELOADED_PHOTOS = {
     "mask_copper":         "AgACAgIAAxkBAAISFmmCHxJgmi274YO17IKpTZTz31lLAAJPEmsbWI3xS6E7_7rJcFgSAQADAgADeQADOAQ",
 
     # ── Мужская линия ─────────────────────────────────────────────────────
-    "men_shampoo": "",   # ❌ НЕТ ФОТО — нужно: men_shampoo.jpg
+    "men_shampoo": "AgACAgIAAxkBAAITv2mXKInvZ2Li2XHctZ6XQ254N3ZeAALtFmsbOVe5SBJUsdzTv2mbAQADAgADeQADOgQ",  # ✅ ДОБАВЛЕНО
 }
 
 
@@ -132,3 +133,5 @@ if __name__ == "__main__":
             print(f"  • {name} (ключ: {key})")
         if len(missing_products) > 10:
             print(f"  ... и еще {len(missing_products) - 10} продуктов")
+    else:
+        print("\n✅ Все фото загружены!")
