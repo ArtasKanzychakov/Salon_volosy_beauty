@@ -219,7 +219,6 @@ PHOTO_MAPPING = {
             "biolipid_spray",
             "hair_fluid",
             "oil_elixir",
-            "strengthening_mask",
         ],
 
         # ── Дополнительные опции ────────────────────────────────────────
@@ -370,7 +369,6 @@ def get_hair_recommendations_html(hair_type: str, problems: list, scalp_type: st
                 "• Биолипидный спрей\n"
                 "• Флюид для волос\n"
                 "• Масло ELIXIR\n"
-                "• Укрепляющая маска для волос\n"
             ),
         }
 
