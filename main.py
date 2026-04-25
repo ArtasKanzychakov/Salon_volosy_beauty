@@ -684,7 +684,10 @@ async def cmd_start(message: Message, state: FSMContext):
         delete_user_data(message.from_user.id)
 
         welcome_text = (
-            "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n"
+            "👋 <b>Добро пожаловать в LARMOSS cosmetics!</b>\n\n"
+            "Ранее вы знали нас как \n"
+            "SVOY AV.COSMETIC — \n"
+            "сегодня мы открываем новую главу под именем LARMOSS COSMETICS\n\n"
             "Я помогу подобрать идеальную косметику для:\n"
             "💇‍♀️ <b>Волос</b> — подбор по типу, проблемам и цвету\n"
             "🧴 <b>Тело</b> — уход по потребностям кожи\n\n"
@@ -780,7 +783,11 @@ async def cmd_admin(message: Message, state: FSMContext):
 async def process_admin_to_main_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        "👋 <b>Добро пожаловать в LARMOSS cosmetics!</b>\n\n"
+        "Ранее вы знали нас как \n"
+        "SVOY AV.COSMETIC — \n"
+        "сегодня мы открываем новую главу под именем LARMOSS COSMETICS\n\n"
+        "<i>Выберите категорию:</i>",
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
@@ -790,7 +797,11 @@ async def process_admin_to_main_menu(message: Message, state: FSMContext):
 async def process_admin_photos_to_main_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        "👋 <b>Добро пожаловать в LARMOSS cosmetics!</b>\n\n"
+        "Ранее вы знали нас как \n"
+        "SVOY AV.COSMETIC — \n"
+        "сегодня мы открываем новую главу под именем LARMOSS COSMETICS\n\n"
+        "<i>Выберите категорию:</i>",
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
@@ -800,7 +811,11 @@ async def process_admin_photos_to_main_menu(message: Message, state: FSMContext)
 async def process_admin_bulk_to_main_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        "👋 <b>Добро пожаловать в LARMOSS cosmetics!</b>\n\n"
+        "Ранее вы знали нас как \n"
+        "SVOY AV.COSMETIC — \n"
+        "сегодня мы открываем новую главу под именем LARMOSS COSMETICS\n\n"
+        "<i>Выберите категорию:</i>",
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
@@ -844,7 +859,11 @@ async def process_main_menu(message: Message, state: FSMContext):
     await state.clear()
     clear_selected_problems(message.from_user.id)
     await message.answer(
-        "👋 <b>Добро пожаловать в SVOY AV.COSMETIC!</b>\n\n<i>Выберите категорию:</i>",
+        "👋 <b>Добро пожаловать в LARMOSS cosmetics!</b>\n\n"
+        "Ранее вы знали нас как \n"
+        "SVOY AV.COSMETIC — \n"
+        "сегодня мы открываем новую главу под именем LARMOSS COSMETICS\n\n"
+        "<i>Выберите категорию:</i>",
         reply_markup=keyboards.main_menu_keyboard()
     )
     await state.set_state(UserState.CHOOSING_CATEGORY)
